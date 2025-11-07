@@ -22,8 +22,21 @@ from models.MKGFENN import MKGFENN
 from inspect import signature
 
 class model_manager:
+    """
+    Model manager for handling different model types based on configuration.
+    
+    This class maps model names to their corresponding model classes and
+    provides functionality to load the appropriate model with proper parameters.
+    """
+    
     def __init__(self,
                  args:argparse):
+        """
+        Initialize the model manager.
+        
+        Args:
+            args: Command line arguments containing model specification and parameters
+        """
         self.args = args    
         self.model_mapping = {"MRCGNN": MRCGNN,
                               "GOGNN" : GOGNN,
@@ -47,37 +60,46 @@ class model_manager:
                               }
 
     def load_model(self):
+        """
+        Load the model corresponding to the specified model type.
+        
+        Returns:
+            Initialized model instance on the appropriate device
+            
+        Raises:
+            ValueError: If num_classes is not properly set
+        """
         num_classes = int(getattr(self.args, 'num_classes', 0))
         if num_classes <= 0:
-            raise ValueError("num_classes 未正确设置；请先在数据加载后赋值。")
+            raise ValueError("num_classes is not properly set; please assign value after data loading.")
 
         cls = self.model_mapping[self.args.model]
         want = set(signature(cls.__init__).parameters.keys())
 
         kwargs = {}
 
-        # --- 维度：多模态列表 vs 单一维度 ---
+        # --- Dimensions: multi-modal list vs single dimension ---
         if 'features' in want:
-            # 仅在模型真的声明了 'features' 时才传列表（如 MKGFENN 等）
+            # Only pass list when model actually declares 'features' (like MKGFENN etc.)
             kwargs['features'] = self.args.features
         if 'feature' in want:
-            # 大多数模型只要合并后的维度
+            # Most models only need the merged dimension
             kwargs['feature'] = int(self.args.dimensions)
 
-        # --- 常见参数（有就传）---
+        # --- Common parameters (pass if available) ---
         for k in ('hidden1', 'hidden2', 'dropout', 'num_classes',
                   'event_sem_dim', 'lambda_align', 'lambda_u_pair',
                   'lambda_u_event', 'uniform_t'):
             if k in want and hasattr(self.args, k):
                 kwargs[k] = getattr(self.args, k)
 
-        # 有些模型叫 num_relations（通常等于类别数）
+        # Some models use num_relations (usually equal to number of classes)
         if 'num_relations' in want:
             kwargs['num_relations'] = num_classes
 
         model = cls(**kwargs)
 
-        # 发送到设备
+        # Send to device
         device = getattr(self.args, 'device', 'cuda' if torch.cuda.is_available() else 'cpu')
         model = model.to(device)
         return model

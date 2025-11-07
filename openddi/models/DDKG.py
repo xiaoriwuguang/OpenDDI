@@ -6,14 +6,28 @@ from torch.utils.checkpoint import checkpoint
 
 class DDKG(nn.Module):
     """
-    DDKG baseline :
-      - 线性降维: feature → hid1
-      - 两层 RGCNConv，使用 num_bases 降低多关系参数/激活
-      - checkpoint (无 use_reentrant 参数)
-      - Pair 特征 → MLP → logits
+    DDKG baseline model for drug-drug interaction prediction.
+    
+    Architecture:
+    - Linear dimensionality reduction: feature → hid1
+    - Two-layer RGCNConv with num_bases for parameter reduction in multi-relation graphs
+    - Checkpointing (without use_reentrant parameter)
+    - Pair features → MLP → logits
     """
+
     def __init__(self, feature:int, hidden1:int, hidden2:int,
                  num_relations:int, num_classes:int, dropout:float=0.3):
+        """
+        Initialize DDKG model.
+        
+        Args:
+            feature: Input feature dimension
+            hidden1: First hidden layer dimension
+            hidden2: Second hidden layer dimension
+            num_relations: Number of relation types
+            num_classes: Number of output classes
+            dropout: Dropout rate for regularization
+        """
         super().__init__()
         self.feature = int(feature)
         self.hid1 = int(hidden1)
@@ -22,10 +36,10 @@ class DDKG(nn.Module):
         self.num_classes = int(num_classes)
         self.dropout = float(dropout)
 
-        # 先将高维节点特征降到 hid1，减少边消息维度
+        # Reduce high-dimensional node features to hid1 to decrease edge message dimension
         self.pre = nn.Linear(self.feature, self.hid1)
 
-        # RGCN 使用低秩分解（bases）
+        # RGCN with low-rank decomposition (bases)
         nb = min(self.num_relations, 16)
         self.rgcn1 = RGCNConv(self.feature, self.hid1,
                               num_relations=self.num_relations,
@@ -34,7 +48,7 @@ class DDKG(nn.Module):
                               num_relations=self.num_relations,
                               num_bases=nb)
 
-        # Pair 表征 → 分类
+        # Pair representation → classification
         pair_in_dim = 4 * self.hid2
         mid = max(self.hid2, 128)
         self.mlp = nn.Sequential(
@@ -43,20 +57,37 @@ class DDKG(nn.Module):
             nn.Linear(mid, self.num_classes)
         )
 
-        # 缓存图
+        # Graph caching
         self.register_buffer("x_cache", None)
         self.register_buffer("edge_index_cache", None)
         self.register_buffer("edge_type_cache", None)
 
     def bind_graph(self, data_graph):
+        """
+        Bind graph data to the model for caching.
+        
+        Args:
+            data_graph: Graph data object containing node features, edge indices, and edge types
+        """
         self.x_cache = data_graph.x
         self.edge_index_cache = data_graph.edge_index
         self.edge_type_cache  = getattr(data_graph, "edge_type", None)
 
     def _encode_nodes(self, x, edge_index, edge_type):
-        # 线性降维
+        """
+        Encode nodes through RGCN layers.
+        
+        Args:
+            x: Node features
+            edge_index: Graph edge indices
+            edge_type: Edge relation types
+            
+        Returns:
+            Encoded node representations
+        """
+        # Linear dimensionality reduction
         x1 = self.pre(x)
-        # checkpoint（旧版 torch 无 use_reentrant 参数）
+        # Checkpointing (older torch version without use_reentrant parameter)
         h = self.rgcn1(x, edge_index, edge_type)
         h = F.relu(h, inplace=True)
         h = F.dropout(h, p=self.dropout, training=self.training)
@@ -65,10 +96,31 @@ class DDKG(nn.Module):
 
     @staticmethod
     def _pair_features(h, i_idx, j_idx):
+        """
+        Generate pair features from node embeddings.
+        
+        Args:
+            h: Node embeddings
+            i_idx: Indices of first nodes in pairs
+            j_idx: Indices of second nodes in pairs
+            
+        Returns:
+            Concatenated pair features
+        """
         hi, hj = h[i_idx], h[j_idx]
         return torch.cat([hi, hj, torch.abs(hi - hj), hi * hj], dim=-1)
 
     def forward(self, graph_or_none, idx_batch):
+        """
+        Forward pass of the DDKG model.
+        
+        Args:
+            graph_or_none: Can be None (already bound) or Data containing graph information
+            idx_batch: (i_idx, j_idx, y) batch indices
+            
+        Returns:
+            logits: [B, K] output logits
+        """
         if graph_or_none is not None:
             x = graph_or_none.x
             edge_index = graph_or_none.edge_index
@@ -76,8 +128,8 @@ class DDKG(nn.Module):
         else:
             x, edge_index, edge_type = self.x_cache, self.edge_index_cache, self.edge_type_cache
 
-        assert x is not None and edge_index is not None, "graph 未绑定或传入"
-        assert edge_type is not None, "DDKG 需要 edge_type（关系类型）"
+        assert x is not None and edge_index is not None, "Graph not bound or provided"
+        assert edge_type is not None, "DDKG requires edge_type (relation types)"
 
         h = self._encode_nodes(x, edge_index, edge_type)
 
