@@ -11,8 +11,9 @@ class ZeroDDI(nn.Module):
     logits = (z · U^T) / tau
     
     Enhancements:
+    
     - Dynamic prototypes: U = normalize(sem_proj(S_raw)) computed in real-time during forward pass (with gradient)
-      -> Semantic projection sem_proj participates in classification loss backpropagation
+    - Semantic projection sem_proj participates in classification loss backpropagation
     - Feature stability: LayerNorm + Normalize
     - Stable initial temperature value tau=0.2 (learnable)
     

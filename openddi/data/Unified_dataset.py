@@ -8,6 +8,7 @@ class UnifiedDataset(BaseDataset):
     Unified dataset class that inherits from BaseDataset.
     
     Features:
+    
     - Unified reading of id->embedding (supports multi-modal concatenation, 
       see args.embedding_path/embedding_dir + --modality)
     - Multi-class: Uses real relationship types as edge_type (used by RGCN)
@@ -23,6 +24,7 @@ class UnifiedDataset(BaseDataset):
         
         Args:
             args: Namespace object containing the following parameters:
+            
                 - matrix: Data type ('multilabel', 'twosides' or other multi-class types)
                 - embedding_path: Embedding file path
                 - matrix_path: Matrix data file path

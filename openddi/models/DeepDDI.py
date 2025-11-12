@@ -8,8 +8,9 @@ class DeepDDI(nn.Module):
     DeepDDI baseline model for drug-drug interaction prediction.
     
     Architecture:
+    
     - No graph convolution, directly uses node feature matrix X
-    - Pair representation: [x_i || x_j || |x_i - x_j| || x_i * x_j]
+    - Pair representation: [x_i || x_j || absolute difference || element-wise product]
     - MLP -> logits (supports single/multi-label classification)
     """
 

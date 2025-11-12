@@ -2,7 +2,7 @@
 import argparse
 from data.MRCGNN_dataset import MRCGNN_dataset
 from data.ZeroDDI_dataset import ZeroDDI_dataset
-from data.Unified_dataset import Unified_dataset
+from data.Unified_dataset import UnifiedDataset
 
 class dataset_manager:
     """

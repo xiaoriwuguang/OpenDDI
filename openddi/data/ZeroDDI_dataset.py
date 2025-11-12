@@ -6,11 +6,6 @@ import argparse
 from typing import List, Tuple
 from torch.utils.data import DataLoader
 from torch_geometric.data import Data
-
-from data.datasetTool import (
-    Base_multi_dataset, Base_multilabel_dataset,
-    _read_multi_pairs_and_remap, _read_multilabel_pairs_and_remap
-)
 from data.BaseDataset import BaseDataset
 
 def _as_path_list(maybe_list) -> List[str]:
@@ -95,86 +90,7 @@ class ZeroDDI_dataset(BaseDataset):
         self.seen_classes = self.unseen_classes = None
         self.event_sem = None  # (K, d_e)
 
-    # ---------- 1) Node multi-modality ----------
-    def _load_node_embeddings(self):
-        """Load node embeddings from multiple files."""
-        emb_paths = _as_path_list(getattr(self.args, 'embedding_path', []))
-        if not emb_paths:
-            raise ValueError("请通过 --embedding_path 提供一个或多个嵌入文件（.pt 或 .csv，可逗号分隔）")
-        id2vec, emb_dim = read_embeddings_any(emb_paths)
-        return id2vec, emb_dim
-
-    # ---------- 2) Read pairs and labels ----------
-    def _read_pairs_labels(self):
-        """Read drug pairs and their labels."""
-        if self.args.matrix in ["multilabel", "twosides"]:
-            pairs_df, num_ddi = _read_multilabel_pairs_and_remap(self.args.matrix_path)
-            return 'multilabel', pairs_df, int(num_ddi)
-        else:
-            pairs_df, num_rel = _read_multi_pairs_and_remap(self.args.matrix_path)
-            return 'multiclass', pairs_df, int(num_rel)
-
-    # ---------- 3) Normal split or zero-shot protocol ----------
-    def _split_normal_or_zs(self, triples: np.ndarray, mode: str):
-        """
-        Split data using normal method or zero-shot protocol.
-        
-        Args:
-            triples: Input triples data
-            mode: Data mode ('multilabel' or 'multiclass')
-        """
-        protocol = str(getattr(self.args, 'zs_protocol', 'none')).upper()
-        rng = np.random.RandomState(getattr(self.args, 'zs_seed', 1))
-        if protocol not in ('NONE', 'CZSL', 'GZSL'): protocol = 'NONE'
-
-        if protocol == 'NONE' or mode == 'multilabel':
-            idx = rng.permutation(len(triples))
-            n = len(triples); n_test = int(n * getattr(self.args, 'test_ratio', 0.2)); n_val = int(n * getattr(self.args, 'val_ratio', 0.1))
-            return triples[idx[n_test+n_val:]], triples[idx[n_test:n_test+n_val]], triples[idx[:n_test]], None, None
-
-        # Zero-shot protocol, only for multiclass
-        y = triples[:, 2]
-        classes = np.unique(y)
-        zs_ratio = float(getattr(self.args, 'zs_ratio', 0.3))
-        num_unseen = max(1, int(round(len(classes) * zs_ratio)))
-        unseen = rng.choice(classes, size=num_unseen, replace=False)
-        seen = np.array([c for c in classes if c not in set(unseen)])
-
-        seen_mask = np.isin(y, seen)
-        unseen_mask = np.isin(y, unseen)
-
-        train_all = triples[seen_mask]
-        cand = triples if protocol == 'GZSL' else triples[unseen_mask]
-
-        idx = rng.permutation(len(cand))
-        n = len(cand); n_test = int(n * getattr(self.args, 'test_ratio', 0.2)); n_val = int(n * getattr(self.args, 'val_ratio', 0.1))
-        test = cand[idx[:n_test]]; val = cand[idx[n_test:n_test+n_val]]; train = train_all
-
-        self.seen_classes, self.unseen_classes = seen, unseen
-        return train, val, test, seen, unseen
-
-    # ---------- 4) Training graph ----------
-    def _build_graph_from_train(self, features_o: np.ndarray, train_triples: np.ndarray):
-        """Build graph from training triples."""
-        use_ratio = float(getattr(self.args, "network_ratio", 1.0))
-        if use_ratio <= 0 or use_ratio > 1: use_ratio = 1.0
-        edges = train_triples
-        if use_ratio < 1.0:
-            keep = int(max(1, round(edges.shape[0] * use_ratio)))
-            sel = np.random.RandomState(1).permutation(edges.shape[0])[:keep]
-            edges = edges[sel]
-            print(f"[graph] edge_ratio={use_ratio} -> {keep}/{train_triples.shape[0]} edges.")
-
-        edge_index, edge_type = [], []
-        for i, j, r in edges:
-            edge_index.append([int(i), int(j)]); edge_type.append(int(r))
-            edge_index.append([int(j), int(i)]); edge_type.append(int(r))
-        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-        edge_type  = torch.tensor(edge_type,  dtype=torch.long)
-        x = torch.tensor(features_o, dtype=torch.float32)
-        return Data(x=x, edge_index=edge_index, edge_type=edge_type)
-
-    # ---------- 5) Event semantics ----------
+    # ---------- Event semantics ----------
     def _load_event_semantics(self, K: int):
         """Load event semantics for zero-shot learning."""
         path = getattr(self.args, 'event_sem_path', None)
