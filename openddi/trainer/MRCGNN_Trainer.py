@@ -1,3 +1,4 @@
+# MRCGNN_Trainer.py
 import copy
 import time
 import os
@@ -13,7 +14,7 @@ from sklearn.metrics import (
 from typing import Dict, Any, Tuple, Optional
 from evaluate.evaluate import _metrics_from_logits, plot_metrics,_metrics_from_logits_multilabel
 
-# —— A100 加速：开启 TF32（不影响数值打印，仅提速）——
+# Enable TF32 acceleration for A100 GPUs
 try:
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -23,10 +24,29 @@ from trainer.BaseTrainer import BaseTrainer
 
 
 class MRCGNN_Trainer(BaseTrainer):
+    """
+    MRCGNN Trainer implementing BaseTrainer framework with MRCGNN-specific logic.
+    
+    Features:
+    - Triple loss training (main loss + two auxiliary losses)
+    - BCEWithLogitsLoss for auxiliary losses
+    - Support for multiple data objects (data_o, data_s, data_a)
+    """
+    
     def __init__(self, args, logger, dataset, model, optimizer):
+        """
+        Initialize MRCGNN Trainer.
+
+        Args:
+            args: Configuration arguments
+            logger: Logger instance for logging
+            dataset: Dataset object containing data loaders
+            model: Neural network model to train
+            optimizer: Optimizer for training
+        """
         super().__init__(args, logger, dataset, model, optimizer)
         self.time = time.time()
-        # MRCGNN特有的损失函数
+        # MRCGNN-specific loss function
         self.b_xent = nn.BCEWithLogitsLoss()
 
     def _get_loss_function(self, task_type: str):
@@ -89,7 +109,7 @@ class MRCGNN_Trainer(BaseTrainer):
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
-                # MRCGNN特有的模型调用 - 传递4个参数
+                # MRCGNN-specific model call - passing 4 parameters
                 output, cla_os, cla_os_a, _ = self.model(
                     data_o=self.dataset.data_o,
                     data_s=self.dataset.data_s,
@@ -97,9 +117,9 @@ class MRCGNN_Trainer(BaseTrainer):
                     idx=inp
                 )
 
-                # MRCGNN特有的三重损失
+                # MRCGNN-specific triple loss
                 loss1 = loss_fct(output, labels.long() if task_type == 'multiclass' else labels)
-                # 确保所有张量都在相同设备上
+                # Ensure all tensors are on the same device
                 data_a_y = self.dataset.data_a.y.float().to(self.device)
                 loss2 = self.b_xent(cla_os, data_a_y)
                 loss3 = self.b_xent(cla_os_a, data_a_y)
@@ -164,7 +184,7 @@ class MRCGNN_Trainer(BaseTrainer):
                     )
 
                     loss1 = loss_fct(output, labels.long() if task_type == 'multiclass' else labels)
-                    # 确保所有张量都在相同设备上
+                    # Ensure all tensors are on the same device
                     data_a_y = self.dataset.data_a.y.float().to(self.device)
                     loss2 = self.b_xent(cla_os, data_a_y)
                     loss3 = self.b_xent(cla_os_a, data_a_y)
@@ -203,55 +223,8 @@ class MRCGNN_Trainer(BaseTrainer):
         if hasattr(self.dataset, 'data_a'):
             self.dataset.data_a = self.dataset.data_a.to(self.device)
 
-        # 确保模型也在正确的设备上
+        # Ensure model is also on the correct device
         if not next(self.model.parameters()).is_cuda and self.device.type == 'cuda':
             self.model.to(self.device)
         elif next(self.model.parameters()).is_cuda and self.device.type == 'cpu':
             self.model.to(self.device)
-
-    # def train(self):
-    #     """Override base train method to call specific methods."""
-    #     if self.args.matrix in ['multilabel', 'twosides']:
-    #         self._train_multilabel()
-    #     else:
-    #         self._train_multi()
-
-    # def _train_multi(self):
-    #     """Legacy method - redirects to base multiclass training."""
-    #     self._train_multiclass()
-
-    # def _train_multilabel(self):
-    #     """Legacy method - redirects to base multilabel training."""
-    #     pass
-
-    # # Legacy methods for backward compatibility
-    # def test_multi(self, printfou):
-    #     """Legacy method for backward compatibility."""
-    #     task_type = 'multiclass'
-    #     loss_fct = self._get_loss_function(task_type)
-    #     loader = self.dataset.val_loader if printfou == 0 else self.dataset.test_loader
-    #     metrics, avg_loss = self._evaluate(loader, loss_fct, task_type)
-
-    #     # Legacy file output
-    #     if printfou == 1:
-    #         with open(getattr(self.args, 'out_file', 'result.txt'), 'a') as f:
-    #             f.write('111  ' + str(metrics['Accuracy']) + '   ' + str(metrics['F1']) +
-    #                     '   ' + str(metrics['Recall']) + '   ' + str(metrics['Precision']) +
-    #                     '   ' + 'time:' + str(time.time() - self.time) + '   ' +
-    #                     'memory:' + str(torch.cuda.max_memory_allocated() / (1024 ** 2)) + '\n')
-
-    #     return metrics['Accuracy'], metrics['F1'], metrics['Recall'], metrics['Precision'], avg_loss
-
-    # def test_multilabel(self, printfou):
-    #     """Legacy method for backward compatibility."""
-    #     task_type = 'multilabel'
-    #     loss_fct = self._get_loss_function(task_type)
-    #     loader = self.dataset.val_loader if printfou == 0 else self.dataset.test_loader
-    #     metrics, avg_loss = self._evaluate(loader, loss_fct, task_type)
-
-    #     # Legacy file output
-    #     if printfou == 1:
-    #         with open(getattr(self.args, 'out_file', 'result.txt'), 'a') as f:
-    #             f.write('111  ' + str(metrics['AUC']) + '   ' + str(metrics['AP']) + '\n')
-
-    #     return metrics['AUC'], avg_loss

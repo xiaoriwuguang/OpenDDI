@@ -5,24 +5,39 @@ import torch.nn.functional as F
 
 class CASTER(nn.Module):
     """
-    CASTER baseline (张量分解/双线性打分风格)：
-      X -> 药物嵌入 e_i
-      每种关系 k 学一个向量 r_k
-      logits_k(i,j) = < (e_i ⊙ r_k), e_j >
-    构造签名与现有 model_manager 一致：
-      (feature, hidden1, hidden2, num_relations, num_classes, dropout)
-    其中 hidden2 用作最终嵌入维度 d。
+    CASTER baseline (tensor decomposition/bilinear scoring style).
+    
+    Architecture:
+    - X -> drug embedding e_i
+    - Each relation k learns a vector r_k
+    - logits_k(i,j) = < (e_i ⊙ r_k), e_j >
+    
+    Signature construction consistent with existing model_manager:
+    - (feature, hidden1, hidden2, num_relations, num_classes, dropout)
+    - Where hidden2 is used as the final embedding dimension d.
     """
+
     def __init__(self, feature:int, hidden1:int, hidden2:int,
                  num_relations:int, num_classes:int, dropout:float=0.3):
+        """
+        Initialize CASTER model.
+        
+        Args:
+            feature: Input feature dimension
+            hidden1: First hidden layer dimension
+            hidden2: Final embedding dimension (d)
+            num_relations: Number of relation types
+            num_classes: Number of output classes
+            dropout: Dropout rate
+        """
         super().__init__()
         self.feature = int(feature)
         self.hid1    = int(hidden1)
-        self.dim     = int(hidden2)      # 嵌入维度 d
+        self.dim     = int(hidden2)      # Embedding dimension d
         self.num_classes = int(num_classes)
         self.dropout = float(dropout)
 
-        # 由节点特征 X 得到药物嵌入 e（两层 MLP，更贴近“特征耦合分解”思想）
+        # Get drug embedding e from node features X (two-layer MLP, closer to "feature coupling decomposition" idea)
         self.enc = nn.Sequential(
             nn.Linear(self.feature, self.hid1),
             nn.ReLU(),
@@ -30,33 +45,53 @@ class CASTER(nn.Module):
             nn.Linear(self.hid1, self.dim)
         )
 
-        # 每个关系 k 的对角“变换”向量 r_k（CASTER/DistMult 思想）
+        # Diagonal "transformation" vector r_k for each relation k (CASTER/DistMult idea)
         self.rel = nn.Parameter(torch.randn(self.num_classes, self.dim))
 
-        # 可选偏置（药物/关系）
+        # Optional bias (drug/relation)
         self.bias_e = nn.Parameter(torch.zeros(self.dim))
         self.bias_r = nn.Parameter(torch.zeros(self.num_classes))
 
-        # 缓存节点特征矩阵 X（与其它 baseline 的 bind_graph 约定一致）
+        # Cache node feature matrix X (consistent with other baseline's bind_graph convention)
         self.register_buffer("x_cache", None)
 
     def bind_graph(self, data_graph):
-        # 只需要 X，不使用边
+        """
+        Bind graph data to the model.
+        
+        Args:
+            data_graph: Graph data containing node features
+        """
+        # Only need X, not using edges
         self.x_cache = data_graph.x
 
     def _node_embed(self, X):
+        """
+        Generate node embeddings from features.
+        
+        Args:
+            X: Input node features
+            
+        Returns:
+            Node embeddings
+        """
         e = self.enc(X)                   # [N, d]
-        # e = F.normalize(e + self.bias_e, dim=-1)  # 稳定训练
+        # e = F.normalize(e + self.bias_e, dim=-1)  # Training stabilization
         return e
 
     def forward(self, graph_or_none, idx_batch):
         """
-        graph_or_none: 可为 None（已 bind）或包含 x 的 Data
-        idx_batch: (i_idx, j_idx, y)
-        返回 logits: [B, K]
+        Forward pass of the model.
+        
+        Args:
+            graph_or_none: Can be None (already bound) or Data containing x
+            idx_batch: (i_idx, j_idx, y) batch indices
+            
+        Returns:
+            logits: [B, K] output logits
         """
         X = graph_or_none.x if (graph_or_none is not None) else self.x_cache
-        assert X is not None, "CASTER 需要节点特征 X，请先在 Trainer 中 bind_graph(dataset.data_graph)"
+        assert X is not None, "CASTER requires node features X, please first bind_graph(dataset.data_graph) in Trainer"
 
         e = self._node_embed(X)           # [N, d]
 
@@ -66,8 +101,8 @@ class CASTER(nn.Module):
         e_i = e[i_idx]                    # [B, d]
         e_j = e[j_idx]                    # [B, d]
 
-        # 计算所有关系的 logits：DistMult 风格 (e_i ⊙ r_k) · e_j
-        # 等价：先对 e_i 扩展 [B, 1, d]，与 rel [K, d] 做逐元素乘，再与 e_j 点积
+        # Calculate logits for all relations: DistMult style (e_i ⊙ r_k) · e_j
+        # Equivalent: first expand e_i to [B, 1, d], element-wise multiply with rel [K, d], then dot product with e_j
         # B, d = e_i.size()
         R = self.rel                      # [K, d]
         # [B, K, d]

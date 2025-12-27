@@ -10,27 +10,54 @@ from typing import Dict, Any, Tuple, Optional
 
 class ZeroDDI_Trainer(BaseTrainer):
     """
-    ZeroDDI: 双模态统一对齐 (DUA)
-    损失 = λ1*对齐 + λ2*均匀化(pair) + λ3*均匀化(event)
+    ZeroDDI Trainer: Dual-Modality Unified Alignment (DUA)
+    Loss = λ1*alignment + λ2*uniformity(pair) + λ3*uniformity(event)
+    
+    Features:
+    - Dynamic prototype learning
+    - Uniformity regularization for pairs and events
+    - Support for both multiclass and multilabel classification
     """
+
     def __init__(self, args, logger, dataset, model, optimizer=None):
+        """
+        Initialize ZeroDDI Trainer.
+
+        Args:
+            args: Configuration arguments
+            logger: Logger instance for logging
+            dataset: Dataset object containing data loaders
+            model: Neural network model to train
+            optimizer: Optimizer for training
+        """
         super().__init__(args, logger, dataset, model, optimizer)
 
-        # 绑定图和事件语义（一次性）
+        # Bind graph and event semantics (one-time setup)
         self.model.bind_graph(self.dataset.data_graph)
         self.model.update_event_U(self.dataset.event_sem)
 
-        # 判断任务类型
+        # Determine task type
         self.multi_label = getattr(self.args, "matrix", None) in ['multilabel', 'twosides']
 
-        # 系数
+        # Coefficients
         self.lambda_align   = float(getattr(self.args, "lambda_align", 1.0))
         self.lambda_u_pair  = float(getattr(self.args, "lambda_u_pair", 0.1))
         self.lambda_u_event = float(getattr(self.args, "lambda_u_event", 0.1))
         self.uniform_t      = float(getattr(self.args, "uniform_t", 2.0))
 
-    # ----------------- uniformity 正则 -----------------
+    # ----------------- uniformity regularization -----------------
     def _uniformity_loss(self, X, t=2.0, max_pairs=4096):
+        """
+        Compute uniformity loss for representation distribution.
+
+        Args:
+            X: Input tensor of representations
+            t: Temperature parameter
+            max_pairs: Maximum number of pairs to sample
+
+        Returns:
+            torch.Tensor: Uniformity loss value
+        """
         B = X.size(0)
         if B < 2: return X.new_zeros(())
         num = min(max_pairs, B*(B-1)//2)
@@ -68,11 +95,11 @@ class ZeroDDI_Trainer(BaseTrainer):
             Dictionary of computed metrics
         """
         if task_type == 'multilabel':
-            # 使用多标签评估函数
+            # Use multilabel evaluation function
             auc, ap = _metrics_from_logits_multilabel(y_true, y_logits)
             return {'AUC': auc}
         else:
-            # 使用多分类评估函数
+            # Use multiclass evaluation function
             acc, f1, rec, pre = _metrics_from_logits(y_true, y_logits)
             return {
                 'Accuracy': acc,
@@ -106,12 +133,12 @@ class ZeroDDI_Trainer(BaseTrainer):
             with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
                 logits, z = self.model(None, inp)
 
-                # 根据任务类型正确处理标签格式
+                # Handle label format based on task type
                 if task_type == 'multiclass':
-                    # 多分类任务需要long类型的标签
+                    # Multiclass task requires long type labels
                     loss_align = loss_fct(logits, labels.long())
                 else:
-                    # 多标签任务保持原始标签格式
+                    # Multilabel task maintains original label format
                     loss_align = loss_fct(logits, labels)
                 loss_u_pair = self._uniformity_loss(z, t=self.uniform_t)
                 U = self.model.U.detach()
@@ -159,12 +186,12 @@ class ZeroDDI_Trainer(BaseTrainer):
                 labels = self._prepare_batch_data(inp, task_type)
 
                 logits, z = self.model(None, inp)
-                # 根据任务类型正确处理标签格式
+                # Handle label format based on task type
                 if task_type == 'multiclass':
-                    # 多分类任务需要long类型的标签
+                    # Multiclass task requires long type labels
                     loss_align = loss_fct(logits, labels.long())
                 else:
-                    # 多标签任务保持原始标签格式
+                    # Multilabel task maintains original label format
                     loss_align = loss_fct(logits, labels)
                 loss = self.lambda_align * loss_align
 
@@ -227,7 +254,7 @@ class ZeroDDI_Trainer(BaseTrainer):
         print(f"[ZeroDDI] Test {metrics_str}")
         self._save_results(test_metrics, "ZeroDDI")
 
-        # Legacy file output - 根据任务类型选择不同的输出格式
+        # Legacy file output - select different output format based on task type
         if task_type == 'multilabel':
             with open(getattr(self.args, "out_file", "result.txt"), "a") as f:
                 f.write(f"ZeroDDI {test_metrics.get('AUC', 0.0)} {test_metrics.get('AP', 0.0)}\n")
@@ -263,7 +290,7 @@ class ZeroDDI_Trainer(BaseTrainer):
         print(f"[ZeroDDI] Test {metrics_str}")
         self._save_results(test_metrics, "ZeroDDI")
 
-        # Legacy file output - 根据任务类型选择不同的输出格式
+        # Legacy file output - select different output format based on task type
         if task_type == 'multilabel':
             with open(getattr(self.args, "out_file", "result.txt"), "a") as f:
                 f.write(f"ZeroDDI {test_metrics.get('AUC', 0.0)} {test_metrics.get('AP', 0.0)}\n")

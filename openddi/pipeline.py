@@ -3,7 +3,7 @@ import os
 from inspect import signature
 import torch
 
-# 仅在需要从 CSV 探测维度时用到
+# Only used when probing dimensions from CSV
 try:
     import pandas as pd
 except Exception:
@@ -16,8 +16,20 @@ from trainer.ZeroDDI_Trainer import ZeroDDI_Trainer
 from trainer.Unified_Trainer import Unified_Trainer
 
 
-
 class Pipeline:
+    """
+    Pipeline class for managing model training workflow.
+    
+    Handles model initialization, trainer selection, and feature dimension validation.
+    
+    Args:
+        args: Configuration arguments
+        logger: Logger instance for logging
+        dataset: Dataset object containing data loaders
+        model: Neural network model to train
+        optimizer: Optimizer for training
+    """
+    
     def __init__(self, args, logger, dataset, model, optimizer):
         self.args = args
         self.logger = logger
@@ -25,12 +37,12 @@ class Pipeline:
         self.model = model
         self.optimizer = optimizer
 
-        # 关键：确保 args.features / args.dimensions 与数据一致；必要时重建模型/优化器
+        # Key: Ensure args.features / args.dimensions are consistent with data; rebuild model/optimizer if necessary
         self._ensure_modal_dims_and_model()
 
         self.trainer_mapping = {
             "MRCGNN": MRCGNN_Trainer,
-            "GOGNN": Unified_Trainer,        # 你原来的映射我保持不变
+            "GOGNN": Unified_Trainer,        # Original mapping preserved
             "ZeroDDI": ZeroDDI_Trainer,
             "DDIMDL": Unified_Trainer,
             "ConvLSTM": Unified_Trainer,
@@ -52,37 +64,46 @@ class Pipeline:
         self.trainer = self.load_trainer()
 
     def run(self):
+        """
+        Execute the main training pipeline.
+        """
         if self.args.task == 'train_xxxx':
             self.trainer.train()
 
     def load_trainer(self):
+        """
+        Load the appropriate trainer based on model type.
+        
+        Returns:
+            Trainer instance for the specified model
+        """
         return self.trainer_mapping[self.args.model](self.args, self.logger, self.dataset, self.model, self.optimizer)
 
     # ---------------------------
-    # 内部工具
+    # Internal utilities
     # ---------------------------
     def _ensure_modal_dims_and_model(self):
         """
-        1) 尽量从 dataset 或 embedding 路径推断各模态维度，回写到 args.features / args.dimensions。
-        2) 如果当前模型构造需要 features 且与 args.features 不一致，则重建模型和优化器。
+        1) Infer modal dimensions from dataset or embedding paths, write back to args.features / args.dimensions.
+        2) If current model construction requires features and doesn't match args.features, rebuild model and optimizer.
         """
-        # 1) 回写模态维度
+        # 1) Write back modal dimensions
         features = None
 
-        # 优先：dataset 暴露的模态维度（如果你在数据加载里存了的话）
+        # Priority: modal dimensions exposed by dataset (if stored during data loading)
         for attr in ["modal_dims", "feature_dims", "modality_dims"]:
             md = getattr(self.dataset, attr, None)
             if isinstance(md, (list, tuple)) and len(md) > 0:
                 features = list(map(int, md))
                 break
 
-        # 其次：根据 --embedding_path 探维度（只读第一行/一个样本，不会太重）
+        # Secondary: probe dimensions from --embedding_path (only read first line/one sample, not too heavy)
         if features is None:
             paths = getattr(self.args, "embedding_path", None)
             if paths:
                 features = self._probe_modal_dims_from_paths(paths)
 
-        # 如果探到了，回写 args
+        # If dimensions found, write back to args
         if features:
             self.args.features = list(map(int, features))
             self.args.dimensions = int(sum(self.args.features))
@@ -91,17 +112,17 @@ class Pipeline:
             else:
                 print(f"[Pipeline] modal features = {self.args.features} (sum={self.args.dimensions})")
 
-        # 2) 检查模型构造签名，必要时重建
+        # 2) Check model construction signature, rebuild if necessary
         cls = type(self.model)
         want = set(signature(cls.__init__).parameters.keys())
-        need_features = ("features" in want) and ("feature" not in want)  # 例如 DDIMDL 这类
-        need_feature  = ("feature" in want)                                # 例如大多数模型
+        need_features = ("features" in want) and ("feature" not in want)  # e.g., DDIMDL type
+        need_feature  = ("feature" in want)                                # e.g., most models
 
-        # 当前实例是否与 args 一致？
+        # Is current instance consistent with args?
         ok = True
         if need_features:
             ok = hasattr(self.args, "features") and isinstance(self.args.features, (list, tuple)) and len(self.args.features) > 0
-            # 如果模型里能拿到它的 features，也进一步比对一下
+            # If model can get its features, further compare
             if ok and hasattr(self.model, "features"):
                 try:
                     cur = list(getattr(self.model, "features"))
@@ -117,11 +138,11 @@ class Pipeline:
             else:
                 print("[Pipeline] Rebuilding model because input feature dims changed/missing.")
 
-            # 用 model_manager 按最新 args 重建模型
+            # Use model_manager to rebuild model with latest args
             man = model_manager(self.args)
             self.model = man.load_model()
 
-            # 也重建优化器（若你在 main 里之后还会覆盖，这里也没问题）
+            # Also rebuild optimizer (if you override later in main, this is fine)
             self.optimizer = torch.optim.Adam(
                 self.model.parameters(),
                 lr=float(getattr(self.args, "lr", 1e-3)),
@@ -129,13 +150,21 @@ class Pipeline:
             )
 
     def _probe_modal_dims_from_paths(self, paths):
-        """从 embedding 路径快速探测各模态维度（.pt/.csv）。"""
+        """
+        Quickly probe modal dimensions from embedding paths (.pt/.csv).
+        
+        Args:
+            paths: List of file paths to embedding files
+            
+        Returns:
+            list: List of dimension sizes for each modality
+        """
         dims = []
         for p in paths:
             ext = os.path.splitext(p)[1].lower()
             if ext == ".pt":
                 d = torch.load(p, map_location="cpu")
-                # 期望是 {id: vector}
+                # Expected format: {id: vector}
                 k = next(iter(d.keys()))
                 v = d[k]
                 v = v.detach().cpu().numpy() if torch.is_tensor(v) else v
@@ -143,8 +172,8 @@ class Pipeline:
             elif ext == ".csv":
                 if pd is None:
                     raise RuntimeError("需要 pandas 来从 CSV 探测维度，请安装 pandas。")
-                df = pd.read_csv(p, nrows=1)  # 只读 1 行足够知道列数
-                dims.append(int(df.shape[1] - 1))  # 去掉第一列 id
+                df = pd.read_csv(p, nrows=1)  # Only read 1 row to get column count
+                dims.append(int(df.shape[1] - 1))  # Subtract first column (id)
             else:
                 raise ValueError(f"不支持的嵌入文件后缀: {p}")
         return dims
