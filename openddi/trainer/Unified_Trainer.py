@@ -75,7 +75,6 @@ class Unified_Trainer(BaseTrainer):
             # Compute micro metrics as well
             auc_micro = roc_auc_score(y_true.reshape(-1), y_logits.reshape(-1))
             prec, rec, _ = precision_recall_curve(y_true.reshape(-1), y_logits.reshape(-1))
-            ap_micro = auc(rec, prec)
 
             return {'AUC': auc}
         else:

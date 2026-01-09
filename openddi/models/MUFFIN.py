@@ -4,24 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class MUFFIN(nn.Module):
-    """
-    MUFFIN model for drug-drug interaction prediction using convolutional networks.
-    """
-    
+
     def __init__(self, feature: int, hidden1: int, hidden2: int,
-                 num_relations: int, num_classes: int, dropout: float = 0.3, entity_dim = 256):
-        """
-        Initialize MUFFIN model.
-        
-        Args:
-            feature: Input feature dimension
-            hidden1: First hidden layer dimension
-            hidden2: Second hidden layer dimension
-            num_relations: Number of relation types (unused in current implementation)
-            num_classes: Number of output classes
-            dropout: Dropout rate for regularization
-            entity_dim: Entity embedding dimension
-        """
+                 num_relations: int, num_classes: int, dropout: float = 0.3, entity_dim = 128):
+
         super().__init__()
         self.num_relations = int(num_relations)
         self.num_classes = int(num_classes)
@@ -44,7 +30,7 @@ class MUFFIN(nn.Module):
             nn.BatchNorm2d(8), nn.MaxPool2d((2, 2)), nn.ReLU())
         
         self.liner = nn.Linear(self.feature, self.entity_dim)
-        self.fc1 = nn.Sequential(nn.Linear(61 * 61 * 8, self.entity_dim), nn.BatchNorm1d(self.entity_dim),
+        self.fc1 = nn.Sequential(nn.Linear(29 * 29 * 8, self.entity_dim), nn.BatchNorm1d(self.entity_dim),
                                      nn.ReLU(True))
         if(self.num_classes > 150) :
             self.fc1 = nn.Sequential(nn.Linear(29 * 29 * 8, self.entity_dim), nn.BatchNorm1d(self.entity_dim),
@@ -59,16 +45,6 @@ class MUFFIN(nn.Module):
         self.layer3 = nn.Sequential(nn.Linear(self.hidden2, self.num_classes))
 
     def forward(self, data_o, idx):
-        """
-        Forward pass of the MUFFIN model.
-        
-        Args:
-            data_o: Graph data object containing node features
-            idx: Batch indices containing pairs of nodes to process
-            
-        Returns:
-            Output logits for the given node pairs
-        """
         x_o = data_o.x  # (N, feature)
         device = x_o.device
 

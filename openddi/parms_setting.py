@@ -4,7 +4,7 @@ import torch
 import random
 import numpy as np
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 def set_random_seed(seed, deterministic=False):
     torch.manual_seed(seed)
@@ -22,31 +22,31 @@ CODE_DIR = os.path.dirname(os.path.abspath(__file__))
 def settings():
     parser = argparse.ArgumentParser()
 
-    # ---------------- Basic Training Parameters ----------------
+    # ---------------- 基础训练参数 ----------------
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Force use CPU')
     parser.add_argument('--device', type=str, choices=['auto', 'cuda', 'cpu'],
                         default='cuda', help="Device: 'auto' -> cuda if available else cpu")
-    parser.add_argument('--workers', type=int, default=0)
+    parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--weight_decay', type=float, default=5e-4)
-    parser.add_argument('--batch', type=int, default=16384)
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--batch', type=int, default=32768)
+    parser.add_argument('--epochs', type=int, default=150)
 
-    # Output directory
+    # 输出文件目录
     default_fig_dir = os.path.join(CODE_DIR, '..', 'results')
     os.makedirs(default_fig_dir, exist_ok=True)
 
-    # Modal splits (optional)
+    # 模态切分（可选）
     parser.add_argument('--modal_splits', type=str, default=None,
-                        help='Dimensions for each modality, comma separated, sum must equal args.dimensions, e.g., "1024,768,256,128"')
+                        help='各模态维度, 逗号分隔, 之和需等于 args.dimensions, 例如 "1024,768,256,128"')
 
-    # ---------------- Model/Task Selection ----------------
+    # ---------------- 模型/任务选择 ----------------
     parser.add_argument('--model', type=str,
                         choices=['MRCGNN','GOGNN','ZeroDDI','DDIMDL','TIGER','ConvLSTM','MVA',
                                  'MUFFIN','DeepDDI','DDKG','SumGNN','LaGAT','KGNN','PHGLDDI',
-                                 'MMDGDTI','ExDDI','MIRACLE','CASTER','MKGFENN'],
-                        default='MKGFENN')
+                                 'MMDGDTI','DSNDDI','ExDDI','MIRACLE','CASTER','MKGFENN'],
+                        default='DSNDDI')
     parser.add_argument('--network_ratio', type=float, default=0.1)
     parser.add_argument('--loss_ratio1', type=float, default=1.0)
     parser.add_argument('--loss_ratio2', type=float, default=0.05)
@@ -54,7 +54,7 @@ def settings():
     parser.add_argument('--hidden1', type=int, default=512)
     parser.add_argument('--hidden2', type=int, default=256)
 
-    # ---------------- Dataset/Modality ----------------
+    # ---------------- 数据集/模态 ----------------
     parser.add_argument('--features', type=int, nargs='+', default=[300, 320, 512, 320, 768])
     parser.add_argument('--dimensions', type=int, default=512)
     parser.add_argument('--num_classes', type=int, default=-1)
@@ -70,43 +70,46 @@ def settings():
     parser.add_argument('--matrix_dir',    type=str, default=os.path.join(CODE_DIR,'..','datasets','matrix'))
     parser.add_argument('--embedding_dir', type=str, default=os.path.join(CODE_DIR,'..','datasets','emb'))
     parser.add_argument('--task', type=str, choices=['train_xxxx'], default='train_xxxx')
+    parser.add_argument('--origin', type=bool, default=False, help='是否使用原始模型')
+    parser.add_argument('--general', type=bool, default=False, help='是否进行泛化实验')
 
-    # Noise
-    parser.add_argument('--noise_std', type=float, default=0.0, help='Gaussian noise σ for input features')
-    parser.add_argument('--noise_ratio', type=float, default=0.0, help='Training set label noise ratio')
+    # 噪声
+    parser.add_argument('--noise_std', type=float, default=0.0, help='输入特征高斯噪声 σ')
+    parser.add_argument('--noise_ratio', type=float, default=0.0, help='训练集标签加噪比例')
 
-    # Sparsity (optional)
-    parser.add_argument('--sparse_drop_rate', type=float, default=0.0)      # Feature random zeroing ratio
-    parser.add_argument('--sparse_sample_rate', type=float, default=0.0)    # Training set label sampling ratio
+    # 稀疏性（可选）
+    parser.add_argument('--sparse_drop_rate', type=float, default=0.0)      # 特征随机置零比例
+    parser.add_argument('--sparse_sample_rate', type=float, default=0.0)    # 训练集标签采样比例
 
     # Zero-shot
-    parser.add_argument('--event_sem_path', type=str, default=None, help='K×d_e .npy/.csv; default is one-hot')
+    parser.add_argument('--event_sem_path', type=str, default=None, help='K×d_e 的 .npy/.csv；缺省为 one-hot')
     parser.add_argument('--zs_protocol', type=str, choices=['none','CZSL','GZSL'], default='none')
     parser.add_argument('--zs_ratio', type=float, default=0.3)
     parser.add_argument('--zs_seed', type=int, default=1)
 
-    # Alignment loss
+
+    # 对齐损失
     parser.add_argument('--lambda_align', type=float, default=1.0)
     parser.add_argument('--lambda_u_pair', type=float, default=0.1)
     parser.add_argument('--lambda_u_event', type=float, default=0.1)
     parser.add_argument('--uniform_t', type=float, default=2.0)
 
-    # ---------- Parse arguments first ----------
+    # ---------- 先解析参数 ----------
     args = parser.parse_args()
 
-    # ---------- Device selection normalization ----------
+    # ---------- 设备选择规范化 ----------
     if args.no_cuda:
         args.device = 'cpu'
     elif args.device == 'auto':
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # If user forces --device=cuda but system unavailable, downgrade
+    # 若用户强制 --device=cuda 但系统不可用，则降级
     if args.device == 'cuda' and not torch.cuda.is_available():
-        print("[WARN] --device=cuda but PyTorch detected no CUDA, falling back to CPU.")
+        print("[WARN] --device=cuda 但 PyTorch 未检测到 CUDA，退回 CPU。")
         args.device = 'cpu'
     args.cuda = (args.device == 'cuda')
 
-    # ---------- Paths/Mappings ----------
-    # Output file (separate subdirectory for each model)
+    # ---------- 路径/映射 ----------
+    # 输出文件（为每个模型单独的子目录）
     model_fig_dir = os.path.join(default_fig_dir, args.model)
     os.makedirs(model_fig_dir, exist_ok=True)
     args.out_file = os.path.join(
@@ -136,9 +139,12 @@ def settings():
 
     args.embedding_path = [args.embedding_map[m] for m in args.modality]
     args.matrix_path = args.matrix_map[args.matrix]
+    args.oridata_path = os.path.join(CODE_DIR,'..','datasets','data')
+    args.oriSmiles_path = os.path.join(CODE_DIR,'..','datasets','data','id_smiles.csv')
+    args.oriKG_path = os.path.join(CODE_DIR,'..','datasets','data','kgnet.tsv')
     args.code_dir = CODE_DIR
 
-    # Small hint: print device/visible GPUs for checking
+    # 小提示：打印一下设备/可见卡，便于你检查
     if args.cuda:
         print(f"[INFO] device=cuda | CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','ALL')} "
               f"| cuda_count={torch.cuda.device_count()}")

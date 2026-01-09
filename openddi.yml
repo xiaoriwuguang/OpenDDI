@@ -1,22 +1,22 @@
 name: openddi
 channels:
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch
+  - conda-forge
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
-  - https://conda.anaconda.org/pytorch
-  - https://conda.anaconda.org/pyg
-  - https://conda.anaconda.org/nvidia
-  - https://conda.anaconda.org/conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
   - blas=1.0=mkl
+  - boost=1.70.0=py38h9de70de_1
+  - boost-cpp=1.70.0=ha2d47e9_1
   - brotli=1.1.0=hd590300_1
   - brotli-bin=1.1.0=hd590300_1
   - brotli-python=1.1.0=py38h17151c0_1
   - bzip2=1.0.8=h4bc722e_7
-  - ca-certificates=2025.8.3=hbd8a1cb_0
+  - ca-certificates=2025.10.5=hbd8a1cb_0
+  - cairo=1.16.0=h18b612c_1001
   - certifi=2024.8.30=pyhd8ed1ab_0
   - cffi=1.17.0=py38heb5c249_0
   - charset-normalizer=3.4.0=pyhd8ed1ab_0
@@ -92,8 +92,10 @@ dependencies:
   - pcre2=10.43=hcad00b1_0
   - pillow=9.3.0=py38hace64e9_1
   - pip=24.3.1=pyh8b19718_0
+  - pixman=0.38.0=h516909a_1003
   - psutil=6.0.0=py38hfb59056_0
   - pthread-stubs=0.4=hb9d3cd8_1002
+  - pycairo=1.25.0=py38h1a1917b_1
   - pycparser=2.22=pyhd8ed1ab_0
   - pyparsing=3.1.4=pyhd8ed1ab_0
   - pyqt=5.9.2=py38h05f1152_4
@@ -106,6 +108,7 @@ dependencies:
   - pyyaml=6.0.1=py38h01eb140_1
   - qt=5.9.7=h5867ecd_1
   - rdflib=6.3.2=pyhd8ed1ab_0
+  - rdkit=2019.09.3=py38hb31dc5d_0
   - readline=8.2=h8c095d6_2
   - requests=2.31.0=pyhd8ed1ab_0
   - scikit-learn=0.24.2=py38hacb3eff_1
@@ -125,8 +128,13 @@ dependencies:
   - unicodedata2=15.1.0=py38h01eb140_0
   - urllib3=2.2.3=pyhd8ed1ab_0
   - wheel=0.45.1=pyhd8ed1ab_0
+  - xorg-libice=1.1.2=hb9d3cd8_0
+  - xorg-libsm=1.2.6=he73a12e_0
+  - xorg-libx11=1.8.12=h4f16b4b_0
   - xorg-libxau=1.0.12=hb9d3cd8_0
   - xorg-libxdmcp=1.1.5=hb9d3cd8_0
+  - xorg-libxext=1.3.6=hb9d3cd8_0
+  - xorg-libxrender=0.9.12=hb9d3cd8_0
   - xz=5.8.1=hbcc6ac9_2
   - xz-gpl-tools=5.8.1=hbcc6ac9_2
   - xz-tools=5.8.1=hb9d3cd8_2
@@ -137,11 +145,16 @@ dependencies:
   - zstd=1.4.9=ha95c52a_0
   - pip:
       - dgl==0.4.3.post2
+      - gensim==4.3.2
       - googledrivedownloader==1.1.0
       - jinja2==3.1.6
       - markupsafe==2.1.5
+      - mock==5.2.0
+      - smart-open==7.3.1
+      - subword-nmt==0.3.8
       - torch-geometric==2.0.0
       # - torch-scatter==2.0.7
       # - torch-sparse==0.6.9
+      - wrapt==2.0.1
       - yacs==0.1.8
-prefix: /home/ai/anaconda3/envs/openddi
+prefix: /data/jiangjiaqi/miniconda3/envs/openddi

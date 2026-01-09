@@ -154,7 +154,6 @@ class BaseTrainer(ABC):
         else:
             raise ValueError(f"Unsupported task type: {task_type}")
 
-    @abstractmethod
     def _get_loss_function(self, task_type: str):
         """
         Get the appropriate loss function for the task.
@@ -167,7 +166,6 @@ class BaseTrainer(ABC):
         """
         pass
 
-    @abstractmethod
     def _compute_metrics(self, y_true: np.ndarray, y_logits: np.ndarray,
                         task_type: str) -> Dict[str, float]:
         """
@@ -183,7 +181,6 @@ class BaseTrainer(ABC):
         """
         pass
 
-    @abstractmethod
     def _train_epoch(self, epoch: int, loss_fct, scaler: torch.cuda.amp.GradScaler,
                     task_type: str) -> Tuple[Dict[str, float], float]:
         """
@@ -200,7 +197,6 @@ class BaseTrainer(ABC):
         """
         pass
 
-    @abstractmethod
     def _evaluate(self, loader, loss_fct, task_type: str) -> Tuple[Dict[str, float], float]:
         """
         Evaluate the model on given data loader.
@@ -296,3 +292,4 @@ class BaseTrainer(ABC):
     def train_multi(self):
         """Legacy method - redirects to main train method."""
         self.train()
+

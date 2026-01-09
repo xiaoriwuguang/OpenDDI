@@ -6,16 +6,15 @@ import argparse
 from typing import List, Tuple
 from torch.utils.data import DataLoader
 from torch_geometric.data import Data
+
 from data.BaseDataset import BaseDataset
 
 def _as_path_list(maybe_list) -> List[str]:
-    """Convert input to list of paths."""
     if isinstance(maybe_list, (list, tuple)): return list(maybe_list)
     if isinstance(maybe_list, str): return [p.strip() for p in maybe_list.split(',') if p.strip()]
     return []
 
 def _read_csv_embedding(path: str) -> Tuple[dict, int]:
-    """Read CSV embedding file and return dictionary and dimension."""
     df = pd.read_csv(path)
     id_col = df.columns[0]
     ids = df[id_col].astype(str).tolist()
@@ -24,7 +23,6 @@ def _read_csv_embedding(path: str) -> Tuple[dict, int]:
     return {ids[i]: vecs[i] for i in range(len(ids))}, dim
 
 def _merge_id2vec(dicts_dims: List[Tuple[dict, int]]) -> Tuple[dict, int]:
-    """Merge multiple embedding dictionaries into one."""
     all_ids = set()
     for d, _ in dicts_dims: all_ids |= set(d.keys())
     all_ids = sorted(list(all_ids))
@@ -38,15 +36,6 @@ def _merge_id2vec(dicts_dims: List[Tuple[dict, int]]) -> Tuple[dict, int]:
     return merged, total_dim
 
 def read_embeddings_any(paths: List[str]) -> Tuple[dict, int]:
-    """
-    Read embeddings from multiple files of different formats.
-    
-    Args:
-        paths: List of file paths to read from
-        
-    Returns:
-        Tuple of (embedding dictionary, total dimension)
-    """
     dicts_dims = []
     for p in paths:
         ext = os.path.splitext(p)[1].lower()
@@ -68,31 +57,17 @@ def read_embeddings_any(paths: List[str]) -> Tuple[dict, int]:
 
 class ZeroDDI_dataset(BaseDataset):
     """
-    ZeroDDI dataset class with support for multi-modal node features and zero-shot learning.
-    
-    Features:
-    - Node modalities (supports concatenation of multiple CSV/PT files)
-    - Training set graph construction (DDI graph)
-    - Supports regular/multi-label classification
-    - Feature and label noise injection during loading phase (training set only)
-    - Zero-shot learning protocols (CZSL, GZSL)
+    节点模态（可拼接多模态 CSV/PT） + 训练集构图（DDI 图）
+    支持：常规/多标签；并在**加载阶段**注入特征噪声与标签噪声（仅训练集）
     """
-
     def __init__(self, args: argparse.Namespace):
-        """
-        Initialize ZeroDDI dataset.
-        
-        Args:
-            args: Namespace object containing configuration parameters
-        """
         super().__init__(args)
-        # ZeroDDI specific attributes
+        # ZeroDDI特有的属性
         self.seen_classes = self.unseen_classes = None
         self.event_sem = None  # (K, d_e)
 
-    # ---------- Event semantics ----------
+    # ---------- 事件语义 ----------
     def _load_event_semantics(self, K: int):
-        """Load event semantics for zero-shot learning."""
         path = getattr(self.args, 'event_sem_path', None)
         E = None
         if path and os.path.isfile(path):
@@ -106,39 +81,32 @@ class ZeroDDI_dataset(BaseDataset):
         self.event_sem = torch.tensor(E, dtype=torch.float32)
         self.args.event_sem_dim = E.shape[1]
 
-    # ---------- ✨ Main entry: loading + noise + split + graph construction ----------
+    # ---------- ✨ 入口：加载 + 噪声 + 划分 + 构图 ----------
     def load_data(self, val_ratio=0.1, test_ratio=0.2):
-        """
-        Main data loading method.
-        
-        Args:
-            val_ratio: Validation set ratio
-            test_ratio: Test set ratio
-        """
-        # First call parent class's load_data for basic data loading logic
+        # 首先调用基类的load_data处理基本的数据加载逻辑
         super().load_data(val_ratio, test_ratio)
 
-        # Then perform ZeroDDI-specific processing
+        # 然后进行ZeroDDI特有的处理
         self._load_zero_ddi_specific()
 
     def _load_zero_ddi_specific(self):
         """
-        ZeroDDI-specific data loading logic including zero-shot protocol and event semantics.
+        ZeroDDI特有的数据加载逻辑，包括零样本协议处理和事件语义加载
         """
-        # Check if zero-shot protocol is used
+        # 判断是否为零样本协议
         protocol = str(getattr(self.args, 'zs_protocol', 'none')).upper()
         if protocol not in ('NONE', 'CZSL', 'GZSL'):
             protocol = 'NONE'
 
-        # Only apply zero-shot processing to multiclass tasks
+        # 仅对多分类任务进行零样本处理
         if protocol != 'NONE' and self.args.matrix not in ['multilabel', 'twosides']:
             self._handle_zero_shot_protocol()
 
-        # Load event semantics
+        # 加载事件语义
         K = getattr(self.args, 'num_classes', 0)
         self._load_event_semantics(K)
 
-        # Ensure data_graph points to the correct data object
+        # 确保data_graph指向正确的数据对象
         self.data_graph = self.data_o
 
         print(f"[ZeroDDI_dataset] X_dim={self.args.dimensions}, K={K}, "
@@ -147,10 +115,12 @@ class ZeroDDI_dataset(BaseDataset):
               f"unseen={None if self.unseen_classes is None else len(self.unseen_classes)}")
 
     def _handle_zero_shot_protocol(self):
-        """Handle zero-shot learning protocol."""
+        """
+        处理零样本学习协议
+        """
         rng = np.random.RandomState(getattr(self.args, 'zs_seed', 1))
 
-        # Get current training data
+        # 获取当前训练数据
         if self.train_loader and hasattr(self.train_loader, 'dataset'):
             train_data = np.array(self.train_loader.dataset.triple)
             y = train_data[:, 2]
@@ -161,6 +131,7 @@ class ZeroDDI_dataset(BaseDataset):
             unseen = rng.choice(classes, size=num_unseen, replace=False)
             seen = np.array([c for c in classes if c not in set(unseen)])
 
-            # Update seen_classes and unseen_classes
+            # 更新seen_classes和unseen_classes
             self.seen_classes = seen
             self.unseen_classes = unseen
+

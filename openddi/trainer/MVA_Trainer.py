@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from sklearn.metrics import (
     roc_auc_score, average_precision_score, f1_score, accuracy_score,
     recall_score, precision_score, precision_recall_curve, auc
@@ -22,32 +23,76 @@ except Exception:
 from trainer.BaseTrainer import BaseTrainer
 
 
-class MRCGNN_Trainer(BaseTrainer):
+class MVA_Trainer(BaseTrainer):
     def __init__(self, args, logger, dataset, model, optimizer):
         super().__init__(args, logger, dataset, model, optimizer)
         self.time = time.time()
-        # MRCGNN特有的损失函数
-        self.b_xent = nn.BCEWithLogitsLoss()
 
-    def _get_loss_function(self, task_type: str):
-        """
-        Get the loss function for MRCGNN training.
+    def _prepare_batch_data(self, batch_data, task_type: str = 'multiclass') -> torch.Tensor:
 
-        Args:
-            task_type: Type of task ('multiclass' or 'multilabel')
+        labels = batch_data[5]
 
-        Returns:
-            Loss function
-        """
         if task_type == 'multiclass':
-            return nn.CrossEntropyLoss()
+            return torch.as_tensor(np.array(labels), dtype=torch.long, device=self.device)
+        elif task_type == 'multilabel':
+            return torch.as_tensor(labels, dtype=torch.float32, device=self.device)
         else:
-            return nn.BCEWithLogitsLoss()
+            raise ValueError(f"Unsupported task type: {task_type}")
+
+    def _train_multiclass(self):
+        print('Start Training (multiclass)...')
+
+        scaler = self._setup_scaler()
+        for epoch in range(self.args.epochs):
+            # Train one epoch
+            train_metrics, train_loss = self._train_epoch(epoch, scaler, 'multiclass')
+
+            # Validate
+            val_metrics, val_loss = self._evaluate(self.dataset.val_loader, 'multiclass')
+
+            # Log progress
+            self._log_training_progress(epoch,
+                                       {'Loss': train_loss, **train_metrics},
+                                       {'Loss': val_loss, **val_metrics})
+
+        # Final test evaluation
+        self.model.eval()
+        test_metrics, test_loss = self._evaluate(self.dataset.test_loader, 'multiclass')
+
+        # Print and save results
+        metrics_str = " | ".join([f"{k}={v:.4f}" for k, v in test_metrics.items()])
+        print(f"[Model] Test {metrics_str}")
+        self._save_results(test_metrics, "Model")
+
+    def _train_multilabel(self):
+        print('Start Training (multilabel)...')
+
+        scaler = self._setup_scaler()
+        for epoch in range(self.args.epochs):
+            # Train one epoch
+            train_metrics, train_loss = self._train_epoch(epoch, scaler, 'multilabel')
+
+            # Validate
+            val_metrics, val_loss = self._evaluate(self.dataset.val_loader, 'multilabel')
+
+            # Log progress
+            self._log_training_progress(epoch,
+                                       {'Loss': train_loss, **train_metrics},
+                                       {'Loss': val_loss, **val_metrics})
+
+        # Final test evaluation
+        self.model.eval()
+        test_metrics, test_loss = self._evaluate(self.dataset.test_loader, 'multilabel')
+
+        # Print and save results
+        metrics_str = " | ".join([f"{k}={v:.4f}" for k, v in test_metrics.items()])
+        print(f"[Model] Test {metrics_str}")
+        self._save_results(test_metrics, "Model")
 
     def _compute_metrics(self, y_true: np.ndarray, y_logits: np.ndarray,
                         task_type: str) -> Dict[str, float]:
         """
-        Compute evaluation metrics for MRCGNN predictions.
+        Compute evaluation metrics for predictions.
 
         Args:
             y_true: Ground truth labels
@@ -64,48 +109,27 @@ class MRCGNN_Trainer(BaseTrainer):
             acc, f1, rec, pre = _metrics_from_logits(y_true, y_logits)
             return {'Accuracy': acc, 'F1': f1, 'Recall': rec, 'Precision': pre}
 
-    def _train_epoch(self, epoch: int, loss_fct, scaler: torch.cuda.amp.GradScaler,
+    def _train_epoch(self, epoch: int, scaler: torch.cuda.amp.GradScaler,
                     task_type: str) -> Tuple[Dict[str, float], float]:
-        """
-        Train for one epoch with MRCGNN-specific logic.
 
-        Args:
-            epoch: Current epoch number
-            loss_fct: Loss function
-            scaler: GradScaler for mixed precision
-            task_type: Type of task
-
-        Returns:
-            Tuple of (metrics_dict, average_loss)
-        """
         self.model.train()
         epoch_loss_sum = 0.0
         epoch_batches = 0
         y_pred_logits_epoch = []
         y_true_epoch = []
 
-        for inp in self.dataset.train_loader:
+        for inp in tqdm(self.dataset.train_loader, 
+                        desc="Training",      # 进度条前缀
+                        leave=True,           # 结束后保留进度条
+                        dynamic_ncols=True):
+            # Move all input tensors to device
+            
             labels = self._prepare_batch_data(inp, task_type)
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
-                # MRCGNN特有的模型调用 - 传递4个参数
-                output, cla_os, cla_os_a, _ = self.model(
-                    data_o=self.dataset.data_o,
-                    data_s=self.dataset.data_s,
-                    data_a=self.dataset.data_a,
-                    idx=inp
-                )
-
-                # MRCGNN特有的三重损失
-                loss1 = loss_fct(output, labels.long() if task_type == 'multiclass' else labels)
-                # 确保所有张量都在相同设备上
-                data_a_y = self.dataset.data_a.y.float().to(self.device)
-                loss2 = self.b_xent(cla_os, data_a_y)
-                loss3 = self.b_xent(cla_os_a, data_a_y)
-                loss_train = (self.args.loss_ratio1 * loss1 +
-                            self.args.loss_ratio2 * loss2 +
-                            self.args.loss_ratio3 * loss3)
+                output = self.model(inp)
+                loss_train = self.model.loss(output, labels.long() if task_type == 'multiclass' else labels) 
 
             scaler.scale(loss_train).backward()
             scaler.step(self.optimizer)
@@ -133,7 +157,7 @@ class MRCGNN_Trainer(BaseTrainer):
 
         return metrics, avg_loss
 
-    def _evaluate(self, loader, loss_fct, task_type: str) -> Tuple[Dict[str, float], float]:
+    def _evaluate(self, loader, task_type: str) -> Tuple[Dict[str, float], float]:
         """
         Evaluate model on given data loader.
 
@@ -153,25 +177,12 @@ class MRCGNN_Trainer(BaseTrainer):
 
         with torch.no_grad():
             for inp in loader:
+                # Move all input tensors to device               
                 labels = self._prepare_batch_data(inp, task_type)
 
                 with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
-                    output, cla_os, cla_os_a, _ = self.model(
-                        data_o=self.dataset.data_o,
-                        data_s=self.dataset.data_s,
-                        data_a=self.dataset.data_a,
-                        idx=inp
-                    )
-
-                    loss1 = loss_fct(output, labels.long() if task_type == 'multiclass' else labels)
-                    # 确保所有张量都在相同设备上
-                    data_a_y = self.dataset.data_a.y.float().to(self.device)
-                    loss2 = self.b_xent(cla_os, data_a_y)
-                    loss3 = self.b_xent(cla_os_a, data_a_y)
-                    loss = (self.args.loss_ratio1 * loss1 +
-                            self.args.loss_ratio2 * loss2 +
-                            self.args.loss_ratio3 * loss3)
-
+                    output= self.model(inp)
+                    loss = self.model.loss(output, labels.long() if task_type == 'multiclass' else labels)
                 loss_sum += float(loss.item())
                 batches += 1
 
@@ -193,18 +204,3 @@ class MRCGNN_Trainer(BaseTrainer):
         metrics = self._compute_metrics(y_label_np, y_pred_logits_np, task_type)
 
         return metrics, avg_loss
-
-    def _move_data_to_device(self):
-        """Override to handle MRCGNN-specific data objects."""
-        if hasattr(self.dataset, 'data_o'):
-            self.dataset.data_o = self.dataset.data_o.to(self.device)
-        if hasattr(self.dataset, 'data_s'):
-            self.dataset.data_s = self.dataset.data_s.to(self.device)
-        if hasattr(self.dataset, 'data_a'):
-            self.dataset.data_a = self.dataset.data_a.to(self.device)
-
-        # 确保模型也在正确的设备上
-        if not next(self.model.parameters()).is_cuda and self.device.type == 'cuda':
-            self.model.to(self.device)
-        elif next(self.model.parameters()).is_cuda and self.device.type == 'cpu':
-            self.model.to(self.device)

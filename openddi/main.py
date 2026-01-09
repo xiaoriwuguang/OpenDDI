@@ -24,7 +24,10 @@ def main():
     ddi_dataset.load_data()
 
     Model_manager = model_manager(args)
-    model = Model_manager.load_model()
+    if args.origin:
+        model = Model_manager.load_origin_model(ddi_dataset)
+    else:
+        model = Model_manager.load_model()
     optimizer = torch.optim.Adam(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
 
     ddi_pipeline = Pipeline(args, logger, ddi_dataset, model, optimizer)

@@ -4,23 +4,22 @@ import torch.nn.functional as F
 import math
 import copy
 from torch.nn.parameter import Parameter
-from torch_geometric.utils import subgraph
-from torch_geometric.nn import GCNConv, global_mean_pool
 
 class MVA(nn.Module):
-    def __init__(self, feature: int, hidden1: int, hidden2: int,
-                 num_relations: int, num_classes: int, dropout: float = 0.3):
-        super().__init__()
-        self.num_relations = int(num_relations)
-        self.num_classes = int(num_classes)
-        self.hidden1 = int(hidden1)
-        self.hidden2 = int(hidden2)
-        self.feature = int(feature)
-        self.dropout_rate = dropout
-
-        # GCN层
-        self.gcn1 = GCNConv(self.feature, self.hidden1)
-        self.gcn2 = GCNConv(self.hidden1, self.hidden2)
+    def __init__(self, args, gcn_in_features, gcn_out_features, num_rel, bias=True):
+        super(MVA, self).__init__()
+        # gcn Parameters
+        self.args = args
+        self.num_rel = num_rel
+        self.gcn_in_features = gcn_in_features
+        self.gcn_out_features = gcn_out_features
+        # Parameter用于将参数自动加入到参数列表
+        self.weight = Parameter(torch.FloatTensor(gcn_in_features, gcn_out_features))
+        if bias:
+            self.bias = Parameter(torch.FloatTensor(gcn_out_features))
+        else:
+            self.register_parameter('bias', None)  # 为模型添加参数
+        self.reset_parameters()
 
         self.fusionsize = 128
         self.max_d = 50
@@ -28,84 +27,177 @@ class MVA(nn.Module):
         self.n_layer = 2
         self.emb_size = 384
         self.dropout_rate = 0
+        # encoder
         self.hidden_size = 384
         self.intermediate_size = 1536
-        self.num_attention_heads = 4
+        self.num_attention_heads = 4 # 2 4 8
         self.attention_probs_dropout_prob = 0.1
         self.hidden_dropout_prob = 0.1
 
+        # specialized embedding with positional one
         self.emb = Embeddings(self.input_dim_drug, self.emb_size, self.max_d, self.dropout_rate)
         self.d_encoder = Encoder_MultipleLayers(self.n_layer, self.hidden_size, self.intermediate_size,
-                                               self.num_attention_heads, self.attention_probs_dropout_prob,
-                                               self.hidden_dropout_prob)
-        self.embed_projection = nn.Linear(self.feature, 128)
+                                                self.num_attention_heads, self.attention_probs_dropout_prob,
+                                                self.hidden_dropout_prob)
+        # self.p_encoder = Encoder_MultipleLayers(self.n_layer, self.hidden_size, self.intermediate_size,
+        #                                         self.num_attention_heads, self.attention_probs_dropout_prob,
+        #                                         self.hidden_dropout_prob)
         self.fusion = AFF(self.fusionsize)
 
-        # 调整decoder_2以处理GCN输出
-        self.decoder_2 = nn.Sequential(
-            nn.Linear(self.hidden2, 512),
-            nn.ReLU(True),
-            nn.BatchNorm1d(512),
-            nn.Linear(512, 128)
-        )
-
+        # dencoder
         self.decoder_trans_mpnn_cat = nn.Sequential(
             nn.Linear(128 * 2, 64),
-            nn.Dropout(self.dropout_rate),
+            nn.Dropout(0.1),
             nn.ReLU(True),
-            nn.Linear(64, self.num_classes)
+
+            nn.BatchNorm1d(64),
+            nn.Linear(64, 32),
+            nn.ReLU(True),
+
+            # output layer
+            nn.Linear(32, self.num_rel)
         )
 
         self.decoder_1 = nn.Sequential(
             nn.Linear(50 * 384, 512),
             nn.ReLU(True),
             nn.BatchNorm1d(512),
+
             nn.Linear(512, 128)
         )
 
-    def forward(self, data_o, idx):
-        x_o, edge_index, e_type = data_o.x, data_o.edge_index, data_o.edge_type
+        self.flatten = nn.Flatten()
+        self.decoder_2 = nn.Sequential(
+            nn.Linear(600 * 128, 512),
+            nn.ReLU(True),
+            nn.BatchNorm1d(512),
 
-        a_idx = torch.as_tensor(list(idx[0]), dtype=torch.long, device=x_o.device)
-        b_idx = torch.as_tensor(list(idx[1]), dtype=torch.long, device=x_o.device)
+            nn.Linear(512, 128)
+        )
 
-        batch_size = a_idx.size(0)  # 假设为 64
-        batch_a = torch.arange(batch_size, device=x_o.device)  # 形状 [64]
-        batch_b = torch.arange(batch_size, device=x_o.device)  # 形状 [64]
+        self.decoder_3 = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.ReLU(True),
+            nn.BatchNorm1d(32),
 
-        # 提取子图
-        edge_index_a, _ = subgraph(a_idx, edge_index, relabel_nodes=True, num_nodes=x_o.size(0))
-        edge_index_b, _ = subgraph(b_idx, edge_index, relabel_nodes=True, num_nodes=x_o.size(0))
+            nn.Linear(32, 1)
+        )
 
-        xa = x_o[a_idx]
-        xb = x_o[b_idx]
+        self.query_proj = nn.Linear(256, 256 * 2, bias=False)
+        self.key_proj = nn.Linear(256, 256 * 2, bias=False)
+        self.value_proj = nn.Linear(256, 256 * 2, bias=False)
+        self.output_proj = nn.Linear(256 * 2, 256, bias=False)
 
-        # GCN处理子图a
-        xa1 = self.gcn1(xa, edge_index_a)
-        xa1 = F.relu(xa1)
-        xa1 = self.gcn2(xa1, edge_index_a)
-        output_1 = global_mean_pool(xa1, batch_a)  # (batch_size, gcn_out_features)
-        output_1 = self.decoder_2(output_1)  # (batch_size, 128)
+    def aggregate_message_1(self, nodes, node_neighbours, edges, mask):
 
-        # GCN处理子图b
-        xb1 = self.gcn1(xb, edge_index_b)
-        xb1 = F.relu(xb1)
-        xb1 = self.gcn2(xb1, edge_index_b)
-        output_2 = global_mean_pool(xb1, batch_b)  # (batch_size, gcn_out_features)
-        output_2 = self.decoder_2(output_2)  # (batch_size, 128)
+        raise NotImplementedError
+    def aggregate_message_2(self, nodes, node_neighbours, edges, mask):
 
-        # 处理 (batch_size, embed_dim) 嵌入
-        d1_trans_fts_layer1 = self.embed_projection(xa) 
-        d2_trans_fts_layer2 = self.embed_projection(xb) 
+        raise NotImplementedError
 
-        # 特征融合
+    # inputs are "batches" of shape (maximum number of nodes in batch, number of features)
+    def update_1(self, nodes, messages):
+        raise NotImplementedError
+    def update_2(self, nodes, messages):
+        raise NotImplementedError
+
+    # inputs are "batches" of same shape as the nodes passed to update
+    # node_mask is same shape as inputs and is 1 if elements corresponding exists, otherwise 0
+    def readout_1(self, hidden_nodes, input_nodes, node_mask):
+        raise NotImplementedError
+    def readout_2(self, hidden_nodes, input_nodes, node_mask):
+        raise NotImplementedError
+    def readout(self,input_nodes, node_mask):
+        raise NotImplementedError
+    def final_layer(self,out):
+
+        raise NotImplementedError
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
+
+    def forward(self, data):
+        # node_tensor_1, adjacency_tensor_1, node_tensor_2, adjacency_tensor_2, num_size_tensor, target_tensor, d1_emb_tensor, d2_emb_tensor, mask_1_tensor, mask_2_tensor
+        # 把数据都放到device上
+        fts_1, adjs_1, fts_2, adjs_2, num_size, _, de_1, de_2, _, _ = data
+        fts_1 = fts_1.to(self.args.device)
+        adjs_1 = adjs_1.to(self.args.device)
+        fts_2 = fts_2.to(self.args.device)
+        adjs_2 = adjs_2.to(self.args.device)
+        de_1 = de_1.to(self.args.device)
+        de_2 = de_2.to(self.args.device)
+        num_size = num_size.size(0)
+
+        # GCN encoder
+        paddingsize = 600
+        
+        device = self.weight.device
+
+        fts_padding_1 = torch.zeros(fts_1.size()[0], paddingsize, 75, dtype=torch.float32, device=device)
+        adjs_padding_1 = torch.zeros(adjs_1.size()[0], paddingsize, paddingsize, dtype=torch.float32, device=device)
+        fts_padding_2 = torch.zeros(fts_2.size()[0], paddingsize, 75, dtype=torch.float32, device=device)
+        adjs_padding_2 = torch.zeros(adjs_2.size()[0], paddingsize, paddingsize, dtype=torch.float32, device=device)
+        fts_padding_1[:, :fts_1.size()[1], :] = fts_1
+        adjs_padding_1[:, :fts_1.size()[1], :fts_1.size()[1]] = adjs_1
+        fts_padding_2[:, :fts_2.size()[1], :] = fts_2
+        adjs_padding_2[:, :fts_2.size()[1], :fts_2.size()[1]] = adjs_2
+
+        support_1 = torch.matmul(fts_padding_1, self.weight)
+        support_2 = torch.matmul(fts_padding_2, self.weight)
+
+        output_1 = torch.matmul(adjs_padding_1, support_1)
+        output_2 = torch.matmul(adjs_padding_2, support_2)
+        if self.bias is not None:
+            output_1 = output_1 + self.bias
+            output_2 = output_2 + self.bias
+
+        # Sequence encoder
+        ex_d_mask = de_1.unsqueeze(1).unsqueeze(2)
+        ex_p_mask = de_2.unsqueeze(1).unsqueeze(2)
+        ex_d_mask = (1.0 - ex_d_mask) * -10000.0
+        ex_p_mask = (1.0 - ex_p_mask) * -10000.0
+
+        d_emb = self.emb(de_1)  # num_size x seq_length x embed_size
+
+        p_emb = self.emb(de_2)
+
+        # set output_all_encoded_layers be false, to obtain the last layer hidden states only...
+
+        d_encoded_layers = self.d_encoder(d_emb.float(), ex_d_mask.float())
+        p_encoded_layers = self.d_encoder(p_emb.float(), ex_p_mask.float())
+        d1_trans_fts = d_encoded_layers.view(num_size, -1)
+        d2_trans_fts = p_encoded_layers.view(num_size, -1)
+
+        d1_trans_fts_layer1 = self.decoder_1(d1_trans_fts)
+        d2_trans_fts_layer1 = self.decoder_1(d2_trans_fts)
+
+        output_1 = self.decoder_2(self.flatten(output_1))
+        output_2 = self.decoder_2(self.flatten(output_2))
+
         output1 = self.fusion(d1_trans_fts_layer1, output_1)
-        output2 = self.fusion(d2_trans_fts_layer2, output_2)
+        output2 = self.fusion(d2_trans_fts_layer1, output_2)
 
         final_fts_cat = torch.cat((output1, output2), dim=1)
+
         result = self.decoder_trans_mpnn_cat(final_fts_cat)
 
         return result
+    
+    def loss(self, logits, labels):
+        """Supervised loss for DDI edge classification.
+
+        If args.matrix in ['multilabel','twosides'] -> BCEWithLogitsLoss (labels float multi-hot)
+        else -> CrossEntropyLoss (labels long class indices)
+        """
+        task = getattr(self.args, 'matrix', 'multiclass')
+        if task in ['multilabel', 'twosides']:
+            labels = labels.float()
+            return nn.BCEWithLogitsLoss()(logits, labels)
+        else:
+            return nn.CrossEntropyLoss()(logits, labels.long())
 
 class AFF(nn.Module):
     def __init__(self, channels=128, r=4):
@@ -181,9 +273,12 @@ class Embeddings(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, input_ids):
+        # b = torch.LongTensor(1, 2)
+        # b = b.cuda()
+        # input_ids = input_ids.type_as(b)
         input_ids = input_ids.long()
         seq_length = input_ids.size(1)
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)#【1.。。50】
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
 
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
 
