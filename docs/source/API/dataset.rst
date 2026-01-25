@@ -5,6 +5,7 @@ Dataset
    :members:
    :undoc-members:
    :show-inheritance:
+   :no-index:
 
 BaseDataset
 -----------
@@ -87,6 +88,38 @@ ZeroDDI_dataset
 ---------------
 
 .. autoclass:: openddi.data.ZeroDDI_dataset.ZeroDDI_dataset
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+GoGNN_dataset
+-------------
+
+.. autoclass:: openddi.data.GoGNN_dataset.GoGNN_dataset
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+MUFFIN_dataset
+--------------
+
+.. autoclass:: openddi.data.MUFFIN_dataset.MUFFIN_dataset
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+MVA_dataset
+-----------
+
+.. autoclass:: openddi.data.MVA_dataset.MVA_dataset
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+TIGER_dataset
+-------------
+
+.. autoclass:: openddi.data.TIGER_dataset.TIGER_dataset
    :members:
    :undoc-members:
    :show-inheritance:

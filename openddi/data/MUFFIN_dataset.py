@@ -15,22 +15,62 @@ import random
 import numpy as np
 
 class MuffinDataset(Dataset):
+    """
+    Dataset class for MUFFIN model containing drug pairs and labels.
+    
+    Args:
+        pairs: Array of drug pairs (u_id, v_id).
+        labels: Array of labels for each drug pair.
+    """
     def __init__(self, pairs, labels):
         self.pairs = pairs
         self.labels = labels
 
     def __len__(self):
+        """
+        Return the total number of samples in the dataset.
+        """
         return len(self.pairs)
 
     def __getitem__(self, idx):
+        """
+        Get a single sample from the dataset.
+        
+        Args:
+            idx: Index of the sample.
+            
+        Returns:
+            tuple: (u_id, v_id, label) for the given index.
+        """
         return self.pairs[idx][0], self.pairs[idx][1], self.labels[idx]
 
 def make_collate_fn(entity_embed, structure_embed, task_type='multiclass', device='cpu'):
+    """
+    Create collate function for batching MUFFIN data.
+    
+    Args:
+        entity_embed: Entity embedding matrix.
+        structure_embed: Structure embedding matrix.
+        task_type: Type of task ('multiclass' or 'multilabel').
+        device: Target device for tensors.
+        
+    Returns:
+        function: Collate function for DataLoader.
+    """
     # Move embeddings to shared memory or device once if possible, 
     # but be careful with multiprocessing.
     # Here we keep them as tensors.
     
     def _collate(samples):
+        """
+        Collate function for batch processing.
+        
+        Args:
+            samples: List of tuples (u, v, label).
+            
+        Returns:
+            list: [None, None, edge_index, labels] format for MUFFIN.forward.
+        """
         # samples: list of (u, v, label)
         us, vs, lbls = zip(*samples)
         
@@ -51,8 +91,22 @@ def make_collate_fn(entity_embed, structure_embed, task_type='multiclass', devic
     return _collate
 
 class MUFFIN_dataset(BaseDataset):
+    """
+    MUFFIN dataset class for multi-modal DDI prediction.
+    
+    Features:
+    - Dual embedding support (entity and structure embeddings)
+    - Pre-trained embedding integration
+    - Supports both multiclass and multilabel classification
+    """
     def __init__(self,
                  args:argparse.ArgumentParser):
+        """
+        Initialize MUFFIN dataset.
+        
+        Args:
+            args: Argument parser with configuration parameters.
+        """
         super().__init__(args)
         self.args = args
         self.entity_dim = 0
@@ -61,6 +115,13 @@ class MUFFIN_dataset(BaseDataset):
         self.structure_pre_embed = None
 
     def load_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
+        """
+        Main data loading method.
+        
+        Args:
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
+        """
         super().load_data()
         # 1. Load Pretrained Embeddings
         # Use BaseDataset's helper to load .pt files (id -> embedding)
@@ -115,6 +176,15 @@ class MUFFIN_dataset(BaseDataset):
 
         # 4. Convert ID pairs to Index pairs
         def process_split(split_name):
+            """
+            Convert string ID pairs to index pairs for a given split.
+            
+            Args:
+                split_name: Name of the split ('train', 'val', 'test').
+                
+            Returns:
+                tuple: (index_pairs, labels) for the split.
+            """
             pairs, labels = splits[split_name]
             idx_pairs = []
             valid_labels = []

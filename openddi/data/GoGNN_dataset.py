@@ -13,10 +13,16 @@ import numpy as np
 from torch_geometric.data import Data
 from torch_geometric.data.batch import Batch
 
+
 def node_feature_dict(type='onehot'):
-    # generate the node feature for each symbol(element)
-    # we have 22 different elements in this data set we use the one hot vector
-    # or fix_dim 8 dim vector to represent each symbol.
+    """
+    Generate node features for each chemical symbol (element).
+    
+    The dataset contains 22 different elements, represented using one-hot vectors.
+    
+    Returns:
+        dict: Dictionary mapping element symbols to feature vectors.
+    """
     num_symbols = 22
     symbol_dict = dict()
     keys = ['C', 'Co', 'P', 'K', 'Br', 'B', 'As', 'F', 'Ca', 'La', 'O', 'Au', 'Gd', 'Na', 'Se', 'N', 'Pt', 'S', 'Al',
@@ -26,10 +32,20 @@ def node_feature_dict(type='onehot'):
             temp = [0] * num_symbols
             temp[i] = 1
             feature = temp
-            symbol_dict[keys[i]] = deepcopy(feature)  # just in case
+            symbol_dict[keys[i]] = deepcopy(feature)
     return symbol_dict
 
+
 def mol_to_nx(mol):
+    """
+    Convert RDKit molecule to NetworkX graph.
+    
+    Args:
+        mol: RDKit molecule object.
+        
+    Returns:
+        nx.Graph: NetworkX graph with atom and bond attributes.
+    """
     G = nx.Graph()
 
     for atom in mol.GetAtoms():
@@ -46,16 +62,23 @@ def mol_to_nx(mol):
                    bond_type=bond.GetBondType())
     return G
 
-def node_feature_process(G, feature_type='onehot'):
-    """生成节点特征：元素 One-hot + 原子属性 (formal_charge, implicit_valence, degree, ring_atom) + hybridization one-hot。
 
-    最终维度：22 (symbol) + 4 (scalar attrs) + 6 (hybridization one-hot) = 32
-    可根据需要在模型侧再进行线性映射。
+def node_feature_process(G, feature_type='onehot'):
+    """
+    Generate node features: element one-hot + atomic attributes + hybridization one-hot.
+    
+    Final dimension: 22 (symbol) + 4 (scalar attributes) + 6 (hybridization one-hot) = 32.
+    
+    Args:
+        G: NetworkX graph of molecule.
+        feature_type: Type of feature encoding (default: 'onehot').
+        
+    Returns:
+        tuple: (node_features, batch_indices) where node_features is a tensor of shape (num_nodes, 32).
     """
     feature_dict = node_feature_dict(feature_type)
     symbol_dim = len(next(iter(feature_dict.values()))) if len(feature_dict) else 22
 
-    # 预定义 hybridization 映射
     hybrid_types = ['SP', 'SP2', 'SP3', 'SP3D', 'SP3D2', 'OTHER']
     hybrid_map = {h: i for i, h in enumerate(hybrid_types)}
 
@@ -71,12 +94,10 @@ def node_feature_process(G, feature_type='onehot'):
     for key in k:
         sym = symbols.get(key, None)
         base = feature_dict.get(sym, [0] * symbol_dim)
-        # 标量特征（简单缩放）
-        fc = float(formal_charge.get(key, 0)) / 5.0          # formal_charge 范围通常较小
-        iv = float(implicit_valence.get(key, 0)) / 8.0       # 经验缩放
+        fc = float(formal_charge.get(key, 0)) / 5.0
+        iv = float(implicit_valence.get(key, 0)) / 8.0
         deg = float(degree_attr.get(key, 0)) / 8.0
         ring = 1.0 if bool(ring_atom.get(key, False)) else 0.0
-        # hybridization one-hot
         hyb_raw = str(hybridization.get(key, 'OTHER')).upper()
         hyb_key = 'OTHER'
         for cand in ['SP', 'SP2', 'SP3', 'SP3D', 'SP3D2']:
@@ -85,14 +106,24 @@ def node_feature_process(G, feature_type='onehot'):
                 break
         hyb_vec = [0.0] * len(hybrid_types)
         hyb_vec[hybrid_map[hyb_key]] = 1.0
-        full_vec = base + [fc, iv, deg, ring] + hyb_vec  # 22 +4 +6 =32
+        full_vec = base + [fc, iv, deg, ring] + hyb_vec
         feats.append(full_vec)
 
     num_nodes = len(k)
     batch = torch.zeros(num_nodes, dtype=torch.int32)
     return torch.tensor(feats, dtype=torch.float32), batch
 
+
 def edge_preprocess(G):
+    """
+    Preprocess edge information from molecular graph.
+    
+    Args:
+        G: NetworkX graph of molecule.
+        
+    Returns:
+        tuple: (edge_index, edge_weight) where edge_index is of shape (2, num_edges*2).
+    """
     edge_weight = []
     edge_1 = []
     edge_2 = []
@@ -100,7 +131,7 @@ def edge_preprocess(G):
     bonds = nx.get_edge_attributes(G, 'bond_type')
     edge_index = list(bonds.keys())
     for edge in edge_index:
-        edge_weight.append(bond_types_dict[str(bonds[edge])])  # change the name of bond to the string to match the dict
+        edge_weight.append(bond_types_dict[str(bonds[edge])])
         edge_1.append(edge[0])
         edge_2.append(edge[1])
         edge_1.append(edge[1])
@@ -109,8 +140,17 @@ def edge_preprocess(G):
     edge_output = [edge_1, edge_2]
     return torch.LongTensor(edge_output), torch.Tensor(edge_weight)
 
-class EdgeDataset(Dataset):
 
+class EdgeDataset(Dataset):
+    """
+    Dataset class for DDI edge prediction tasks.
+    
+    Args:
+        output: Dictionary containing molecular graph data.
+        edges: Array of edge pairs (u_id, v_id).
+        labels: Array of labels for each edge.
+        dt: Dataset type flag ('multiclass' or 'multilabel').
+    """
     def __init__(self, output, edges, labels, dt):
         super().__init__()
         self.output = output
@@ -119,16 +159,36 @@ class EdgeDataset(Dataset):
         self.dt = dt
 
     def __len__(self):
+        """Return the total number of edges in the dataset."""
         return len(self.edges)
 
     def __getitem__(self, idx: int):
-        # 返回当前样本的 (u_id, v_id, label)，在 collate 中统一映射与堆叠
+        """
+        Get a single sample from the dataset.
+        
+        Args:
+            idx: Index of the sample.
+            
+        Returns:
+            tuple: (u_id, v_id, label) for the given index.
+        """
         u_id = self.edges[idx, 0]
         v_id = self.edges[idx, 1]
         label = self.labels[idx]
         return u_id, v_id, label
 
+
 def build_smile_graph(modular_file_name, feature_type='onehot'):
+    """
+    Build molecular graphs from SMILES strings in CSV file.
+    
+    Args:
+        modular_file_name: Path to CSV file containing ID-SMILES pairs.
+        feature_type: Type of node feature encoding.
+        
+    Returns:
+        dict: Dictionary mapping drug IDs to processed graph data.
+    """
     id_graph_dict = {}
     with open(modular_file_name, newline='') as f:
         reader = csv.reader(f)
@@ -156,20 +216,32 @@ def build_smile_graph(modular_file_name, feature_type='onehot'):
     
     return output
 
+
 def make_collate_fn(output_dict, task_type='multiclass'):
     """
-    Modified collate_fn to return batched graph data for the current batch only.
-    This fixes the computational waste and allows parallel processing of molecular graphs.
+    Create collate function for batching molecular graphs and DDI edges.
+    
+    Args:
+        output_dict: Dictionary containing molecular graph data.
+        task_type: Type of task ('multiclass' or 'multilabel').
+        
+    Returns:
+        function: Collate function for DataLoader.
     """
-    # Determine feature dimension from the first available graph, default to 32
     feature_dim = 32
     if len(output_dict) > 0:
         feature_dim = output_dict[next(iter(output_dict))][0].shape[1]
     
     def _collate(samples):
-        # samples: list of tuples (u_id, v_id, label)
+        """
+        Collate function for batch processing.
         
-        # 1. Identify unique nodes in this batch
+        Args:
+            samples: List of tuples (u_id, v_id, label).
+            
+        Returns:
+            list: [batched_data, edges, None, labels] where batched_data is a list of Data objects.
+        """
         unique_nodes = set()
         for u_id, v_id, _ in samples:
             unique_nodes.add(u_id)
@@ -227,15 +299,37 @@ def make_collate_fn(output_dict, task_type='multiclass'):
 
     return _collate
 
+
 class GoGNN_dataset(BaseDataset):
-    def __init__(self,
-                 args:argparse.ArgumentParser):
+    """
+    GoGNN dataset class for graph-based DDI prediction.
+    
+    Features:
+    - Molecular graph construction from SMILES
+    - Node feature extraction (element, atomic properties, hybridization)
+    - Edge feature processing (bond types)
+    - Supports multiclass and multilabel classification
+    """
+    def __init__(self, args: argparse.ArgumentParser):
+        """
+        Initialize GoGNN dataset.
+        
+        Args:
+            args: Argument parser with configuration parameters.
+        """
         super().__init__(args)
         self.args = args
         self.num_features = 32
         self.num_edge_features = None
 
     def load_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
+        """
+        Main data loading method.
+        
+        Args:
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
+        """
         super().load_data(val_ratio, test_ratio)
 
         id_smile = build_smile_graph(
@@ -246,7 +340,7 @@ class GoGNN_dataset(BaseDataset):
                                                 random_seed=getattr(self.args, 'seed', 1),
                                                 return_original_ids=True)
 
-        # pairs 是原始字符串 ID，对后续图索引查找保持一致
+        # `pairs` represents the original string IDs, ensuring consistency for subsequent graph index lookups
         train_pairs, train_labels = splits['train']
         val_pairs, val_labels = splits['val']
         test_pairs, test_labels = splits['test']
@@ -260,14 +354,14 @@ class GoGNN_dataset(BaseDataset):
         val_x = pairs_to_np(val_pairs)
         test_x = pairs_to_np(test_pairs)
 
-        # 根据数据集类型构造标签张量
+        # Process labels based on task type
         if self.args.matrix in ['multilabel', 'twosides']:
-            # 多标签：保持 float32 数组
+            # Multilabel classification
             train_y = np.array(train_labels, dtype=np.float32)
             val_y = np.array(val_labels, dtype=np.float32)
             test_y = np.array(test_labels, dtype=np.float32)
         else:
-            # 多分类：单整数标签
+            # Multiclass classification: single integer label
             train_y = np.array(train_labels, dtype=np.int64)
             val_y = np.array(val_labels, dtype=np.int64)
             test_y = np.array(test_labels, dtype=np.int64)
@@ -295,16 +389,4 @@ class GoGNN_dataset(BaseDataset):
         self.val_loader = DataLoader(val_data, **params, collate_fn=collate_fn)
         self.test_loader = DataLoader(test_data, **params, collate_fn=collate_fn)
 
-        
-
-        # self.num_edge_features, self.train_loader, self.val_loader, self.test_loader, node_ids, feature_dim = build_dataloaders(
-        #     modular_file_name=os.path.join(self.args.oridata_path, 'id_smiles.csv'),
-        #     DDI_file_name=self.args.matrix_path,
-        #     args=self.args,
-        #     device=self.args.device,
-        #     val_ratio=val_ratio,
-        #     test_ratio=test_ratio,
-        #     seed=getattr(self.args, 'seed', 1)
-        # )
-        # Save explicit node ordering for downstream use / debugging
         self.node_list = all_contained_drugs

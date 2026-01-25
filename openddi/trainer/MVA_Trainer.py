@@ -12,9 +12,9 @@ from sklearn.metrics import (
     recall_score, precision_score, precision_recall_curve, auc
 )
 from typing import Dict, Any, Tuple, Optional
-from evaluate.evaluate import _metrics_from_logits, plot_metrics,_metrics_from_logits_multilabel
+from evaluate.evaluate import _metrics_from_logits, plot_metrics, _metrics_from_logits_multilabel
 
-# —— A100 加速：开启 TF32（不影响数值打印，仅提速）——
+# Enable TF32 for A100 acceleration (doesn't affect numerical precision, only speed)
 try:
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -24,12 +24,37 @@ from trainer.BaseTrainer import BaseTrainer
 
 
 class MVA_Trainer(BaseTrainer):
+    """
+    Trainer class for MVA (Multi-View Attention) model.
+    
+    Handles both multiclass and multilabel classification tasks with progress tracking.
+    """
+
     def __init__(self, args, logger, dataset, model, optimizer):
+        """
+        Initialize the MVA trainer.
+        
+        Args:
+            args: Command line arguments or configuration object
+            logger: Logger instance for logging
+            dataset: Dataset object containing train/val/test loaders
+            model: Model to train
+            optimizer: Optimizer for training
+        """
         super().__init__(args, logger, dataset, model, optimizer)
         self.time = time.time()
 
     def _prepare_batch_data(self, batch_data, task_type: str = 'multiclass') -> torch.Tensor:
-
+        """
+        Prepare batch labels for training/evaluation.
+        
+        Args:
+            batch_data: Batch data from dataloader
+            task_type: Type of task ('multiclass' or 'multilabel')
+            
+        Returns:
+            Prepared labels as torch tensor
+        """
         labels = batch_data[5]
 
         if task_type == 'multiclass':
@@ -40,6 +65,9 @@ class MVA_Trainer(BaseTrainer):
             raise ValueError(f"Unsupported task type: {task_type}")
 
     def _train_multiclass(self):
+        """
+        Training loop for multiclass classification tasks.
+        """
         print('Start Training (multiclass)...')
 
         scaler = self._setup_scaler()
@@ -65,6 +93,9 @@ class MVA_Trainer(BaseTrainer):
         self._save_results(test_metrics, "Model")
 
     def _train_multilabel(self):
+        """
+        Training loop for multilabel classification tasks.
+        """
         print('Start Training (multilabel)...')
 
         scaler = self._setup_scaler()
@@ -93,12 +124,12 @@ class MVA_Trainer(BaseTrainer):
                         task_type: str) -> Dict[str, float]:
         """
         Compute evaluation metrics for predictions.
-
+        
         Args:
             y_true: Ground truth labels
             y_logits: Model logits
             task_type: Type of task ('multiclass' or 'multilabel')
-
+            
         Returns:
             Dictionary of computed metrics
         """
@@ -111,7 +142,17 @@ class MVA_Trainer(BaseTrainer):
 
     def _train_epoch(self, epoch: int, scaler: torch.cuda.amp.GradScaler,
                     task_type: str) -> Tuple[Dict[str, float], float]:
-
+        """
+        Train model for one epoch.
+        
+        Args:
+            epoch: Current epoch number
+            scaler: Gradient scaler for mixed precision training
+            task_type: Type of task ('multiclass' or 'multilabel')
+            
+        Returns:
+            Tuple of (metrics dictionary, average loss)
+        """
         self.model.train()
         epoch_loss_sum = 0.0
         epoch_batches = 0
@@ -119,8 +160,8 @@ class MVA_Trainer(BaseTrainer):
         y_true_epoch = []
 
         for inp in tqdm(self.dataset.train_loader, 
-                        desc="Training",      # 进度条前缀
-                        leave=True,           # 结束后保留进度条
+                        desc="Training",      # Progress bar prefix
+                        leave=True,           # Keep progress bar after completion
                         dynamic_ncols=True):
             # Move all input tensors to device
             
@@ -160,14 +201,13 @@ class MVA_Trainer(BaseTrainer):
     def _evaluate(self, loader, task_type: str) -> Tuple[Dict[str, float], float]:
         """
         Evaluate model on given data loader.
-
+        
         Args:
             loader: Data loader for evaluation
-            loss_fct: Loss function
-            task_type: Type of task
-
+            task_type: Type of task ('multiclass' or 'multilabel')
+            
         Returns:
-            Tuple of (metrics_dict, average_loss)
+            Tuple of (metrics dictionary, average loss)
         """
         self.model.eval()
         y_pred_logits = []
@@ -181,7 +221,7 @@ class MVA_Trainer(BaseTrainer):
                 labels = self._prepare_batch_data(inp, task_type)
 
                 with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
-                    output= self.model(inp)
+                    output = self.model(inp)
                     loss = self.model.loss(output, labels.long() if task_type == 'multiclass' else labels)
                 loss_sum += float(loss.item())
                 batches += 1

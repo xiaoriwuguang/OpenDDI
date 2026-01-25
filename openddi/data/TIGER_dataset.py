@@ -20,10 +20,26 @@ import numpy as np
 
 
 def deepwalk_walk_wrapper(class_instance, walk_length, start_node):
+    """
+    Wrapper function for deepwalk walk method.
+    
+    Args:
+        class_instance: Instance of BasicWalker class.
+        walk_length: Length of the random walk.
+        start_node: Starting node for the walk.
+    """
     class_instance.deepwalk_walk(walk_length, start_node)
 
 
 class BasicWalker:
+    """
+    Basic random walker for DeepWalk algorithm.
+    
+    Args:
+        G: NetworkX graph.
+        start_nodes: List of starting nodes for walks.
+        workers: Number of workers (unused in this implementation).
+    """
     def __init__(self, G, start_nodes, workers):
         self.G = G
         self.workers = workers
@@ -66,6 +82,15 @@ class BasicWalker:
 
 
 class Walker:
+    """
+    Node2Vec walker with biased random walks.
+    
+    Args:
+        G: Graph object with G, node_size, and look_up_dict attributes.
+        p: Return parameter.
+        q: In-out parameter.
+        workers: Number of workers.
+    """
     def __init__(self, G, p, q, workers):
         self.G = G.G
         self.p = p
@@ -217,6 +242,19 @@ def alias_draw(J, q):
         return J[kk]
 
 class Node2vec(object):
+    """
+    Node2Vec algorithm implementation.
+    
+    Args:
+        start_nodes: List of starting nodes for walks.
+        graph: NetworkX graph.
+        path_length: Length of each random walk.
+        num_paths: Number of walks per node.
+        p: Return parameter (default=1.0).
+        q: In-out parameter (default=1.0).
+        dw: Whether to use DeepWalk instead of Node2Vec (default=False).
+        **kwargs: Additional arguments including workers.
+    """
 
     def __init__(self, start_nodes, graph, path_length, num_paths, p=1.0, q=1.0, dw=False, **kwargs):
 
@@ -239,7 +277,12 @@ class Node2vec(object):
 
 
     def get_walks(self):
-
+        """
+        Get the generated random walks.
+        
+        Returns:
+            list: List of random walk sequences.
+        """
         return self.walks
 
 e_map = {
@@ -280,6 +323,15 @@ e_map = {
 
 # mol atom feature for mol graph
 def atom_features(atom):
+    """
+    Extract atom features for molecular graph.
+    
+    Args:
+        atom: RDKit atom object.
+        
+    Returns:
+        tuple: (feature_vector, degree) where feature_vector is 78-dimensional.
+    """
     # 44 +11 +11 +11 +1
     return np.array(one_of_k_encoding_unk(atom.GetSymbol(),
                                           ['C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg', 'Na', 'Ca', 'Fe', 'As',
@@ -291,13 +343,23 @@ def atom_features(atom):
                     [atom.GetIsAromatic()]), atom.GetDegree()
 
 def one_of_k_encoding_unk(x, allowable_set):
-    '''Maps inputs not in the allowable set to the last element.'''
+    '''
+    Maps inputs not in the allowable set to the last element.
+    '''
     if x not in allowable_set:
         x = allowable_set[-1]
     return list(map(lambda s: x == s, allowable_set))
 
 def single_smile_to_graph(smile):
-
+    """
+    Convert SMILES string to molecular graph representation.
+    
+    Args:
+        smile: SMILES string.
+        
+    Returns:
+        tuple: (c_size, features, edge_index, rel_index, s_edge_index, s_value, s_rel, max_degree)
+    """
     mol = Chem.MolFromSmiles(smile)
     c_size = mol.GetNumAtoms()
 
@@ -320,24 +382,32 @@ def single_smile_to_graph(smile):
     mol_edge_index = mol_index[:,:2]
     mol_rel_index = mol_index[:,2]
 
-    ##在这个位置应该计算的是最短路径
+    # The shortest path should be calculated at this location
     s_edge_index_value = calculate_shortest_path(mol_edge_index)
     s_edge_index = s_edge_index_value[:, :2]
     s_value = s_edge_index_value[:, 2]
     s_rel = s_value
-    s_rel[np.where(s_value == 1)] = mol_rel_index  ##将直接相连的关
+    s_rel[np.where(s_value == 1)] = mol_rel_index  # Map directly connected relationships to the original edge relationships
     s_rel[np.where(s_value != 1)] += 23
 
     assert len(s_edge_index) == len(s_value)
     assert len(s_edge_index) == len(s_rel)
 
-    ##c_size:原子的个数
-    ##features:每个原子的特征 c_size * 67
-    ##edge_index:边 n_edges * 2
+    # c_size: Number of atoms
+    # features: The characteristics of each atom c_size * 67
+    # edge_index: The edges connecting atoms n_edges * 2
     return c_size, features, mol_edge_index.tolist(), mol_rel_index.tolist(), s_edge_index.tolist(), s_value.tolist(), s_rel.tolist(), max(degrees)
 
 def calculate_shortest_path(edge_index):
-
+    """
+    Calculate shortest path distances between all node pairs.
+    
+    Args:
+        edge_index: Edge index array of shape (n_edges, 2).
+        
+    Returns:
+        np.array: Array of shape (n_pairs, 3) with [node_i, node_j, distance].
+    """
     s_edge_index_value = []
 
     g = nx.DiGraph()
@@ -353,7 +423,16 @@ def calculate_shortest_path(edge_index):
     return np.array(s_edge_index_value)
 
 def smile_to_graph(datapath, ligands):
-
+    """
+    Convert SMILES strings to graph representations and cache to JSON.
+    
+    Args:
+        datapath: Path to save/load cached graph data.
+        ligands: Dictionary mapping drug IDs to SMILES strings.
+        
+    Returns:
+        tuple: (smile_graph, max_rel, max_degree) where smile_graph is dictionary of graph data.
+    """
     smile_graph = {}
 
     paths = datapath + "/mol_sp.json"
@@ -376,15 +455,15 @@ def smile_to_graph(datapath, ligands):
     for d, smi in ligands.items():
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
-            # 无法解析的 SMILES：使用占位空图（保持 8 元组结构）
+            # Unparsable SMILES: Using a placeholder empty graph (maintaining the 8-tuple structure)
             invalid_smiles.append(d)
             placeholder = (1, [[0 for _ in range(67)]], [[0, 0]], [0], [[0, 0]], [1], [1], 1)
             smile_graph[d] = placeholder
             smiles_max_node_degree.append(1)
             continue
-        lg = Chem.MolToSmiles(mol)  # 规范化
+        lg = Chem.MolToSmiles(mol)  # normalize SMILES
         c_size, features, edge_index, rel_index, s_edge_index, s_value, s_rel, deg = single_smile_to_graph(lg)
-        if c_size == 0:  # 单原子 / 无边：也放占位而不是跳过
+        if c_size == 0:  # Single atom / no edges: also use placeholder instead of skipping
             single_atom_or_empty.append(d)
             placeholder = (1, [[0 for _ in range(67)]], [[0, 0]], [0], [[0, 0]], [1], [1], 1)
             smile_graph[d] = placeholder
@@ -406,7 +485,15 @@ def smile_to_graph(datapath, ligands):
     return smile_graph, num_rel_mol_update, max(smiles_max_node_degree) if smiles_max_node_degree else 0
 
 def read_network(path):
-
+    """
+    Read knowledge graph network from TSV file.
+    
+    Args:
+        path: Path to TSV file.
+        
+    Returns:
+        tuple: (num_node, edge_index, rel_index, num_rel)
+    """
     edge_index = []
     rel_index = []
 
@@ -434,6 +521,12 @@ def read_smiles(path):
     Simple reader that returns a dict mapping id->SMILES.
     If `path` is a directory, looks for a file named 'id_smiles.csv' inside it.
     Supports lines like 'id,SMILES' or 'id\tSMILES'. Keeps first occurrence on duplicates.
+    
+    Args:
+        path: Path to directory or file containing SMILES data.
+        
+    Returns:
+        dict: Dictionary mapping drug IDs to SMILES strings.
     """
     # allow passing either a file path or a directory containing id_smiles.csv
     if os.path.isdir(path):
@@ -470,6 +563,16 @@ def read_smiles(path):
     return out
 
 def read_interactions(path, drug_dict):
+    """
+    Read DDI interactions from file.
+    
+    Args:
+        path: Path to interactions file.
+        drug_dict: Dictionary of valid drug IDs.
+        
+    Returns:
+        tuple: (interactions_array, set_of_drugs_in_DDI)
+    """
     interactions = []
     all_drug_in_ddi = []
     positive_drug_inter_dict = {}
@@ -502,7 +605,20 @@ def read_interactions(path, drug_dict):
     return np.array(interactions, dtype=int), set(all_drug_in_ddi)
 
 def generate_node_subgraphs(dataset, drug_id, network_edge_index, network_rel_index, num_rel, args):
-
+    """
+    Generate subgraphs for drugs using random walk extraction.
+    
+    Args:
+        dataset: Dataset path.
+        drug_id: Set of drug IDs.
+        network_edge_index: Knowledge graph edge indices.
+        network_rel_index: Knowledge graph relation indices.
+        num_rel: Number of relations in KG.
+        args: Arguments object.
+        
+    Returns:
+        tuple: (subgraphs_dict, max_degree, max_relation_number)
+    """
     edge_index = torch.from_numpy(np.array(network_edge_index).T) ##[2, num_edges]
     rel_index = torch.from_numpy(np.array(network_rel_index))
 
@@ -521,7 +637,21 @@ def generate_node_subgraphs(dataset, drug_id, network_edge_index, network_rel_in
     return subgraphs, max_degree, max_rel_num
 
 def rwExtractor(drug_id, edge_index, rel_index, shortest_paths, num_rel, sub_num, length):
-
+    """
+    Extract subgraphs using random walk sampling.
+    
+    Args:
+        drug_id: Set of drug IDs.
+        edge_index: Graph edge index tensor.
+        rel_index: Relation index tensor.
+        shortest_paths: Path for caching.
+        num_rel: Number of relations.
+        sub_num: Number of walks per node.
+        length: Walk length.
+        
+    Returns:
+        tuple: (subgraphs_dict, max_degree, max_relation)
+    """
     json_path = shortest_paths + "rw_num_" + str(sub_num) + "_length_" + str(length) + "sp.json"
     if os.path.exists(json_path):
         with open(json_path, 'r') as f:
@@ -541,18 +671,18 @@ def rwExtractor(drug_id, edge_index, rel_index, shortest_paths, num_rel, sub_num
     max_degree = []
     subgraphs = {}
     for d in drug_id:
-        # 将 ID 转为整型；若失败则使用占位子图
+        # Convert the ID to an integer; if unsuccessful, use a placeholder image
         try:
             start_node = int(d)
         except Exception:
-            # 占位：最小单节点图
+            # Placeholder: Minimal single-node graph
             placeholder_sub = ([0], [[0, 0]], [0], [True], [[0, 0]], [1], [1], 1)
             subgraphs[d] = placeholder_sub
             num_rel_update.append(1)
             max_degree.append(1)
             continue
 
-        # 若起点不在图中，也给占位子图，保证不报错且可训练
+        # If the starting node is not in the graph, also provide a placeholder subgraph to ensure no errors and allow training
         if not my_graph.has_node(start_node):
             placeholder_sub = ([start_node], [[0, 0]], [0], [True], [[0, 0]], [1], [1], 1)
             subgraphs[d] = placeholder_sub
@@ -560,13 +690,13 @@ def rwExtractor(drug_id, edge_index, rel_index, shortest_paths, num_rel, sub_num
             max_degree.append(1)
             continue
 
-        subsets = Node2vec(start_nodes=[start_node], graph=my_graph, path_length=length, num_paths=sub_num, workers=6, dw=True).get_walks() ##返回一个list
-        # deepwalk 返回的 “walks” 在 BasicWalker 实现里是去重后的若干条 walk 列表，我们需要包含 start_node 的节点集合
-        # 这里保持与原有逻辑一致：subsets 作为节点集合使用
+        subsets = Node2vec(start_nodes=[start_node], graph=my_graph, path_length=length, num_paths=sub_num, workers=6, dw=True).get_walks() # returns list of lists
+        # The "walks" returned by DeepWalk, as implemented in BasicWalker, are several lists of walks with duplicate nodes removed. We need a set of nodes that includes the `start_node`
+        # Here, we maintain consistency with the original logic: subsets are used as a set of nodes
         try:
             mapping_id = subsets.index(start_node)
         except ValueError:
-            # 极少情况 start_node 不在返回的列表中，仍给出占位
+            # In rare cases, the start_node is not in the returned list, but a placeholder is still provided
             placeholder_sub = ([start_node], [[0, 0]], [0], [True], [[0, 0]], [1], [1], 1)
             subgraphs[d] = placeholder_sub
             num_rel_update.append(1)
@@ -578,7 +708,7 @@ def rwExtractor(drug_id, edge_index, rel_index, shortest_paths, num_rel, sub_num
 
         sub_edge_index, sub_rel_index = subgraph(subsets, edge_index, undirected_rel_index, relabel_nodes=True)
         row_sub, col_sub = sub_edge_index
-        ##因为这里面会涉及到multi-relation，所以在添加子图的时候，要把多条边都添加进去
+        # Because this involves multi-relation, all edges must be added when adding subgraphs
         new_s_edge_index = sub_edge_index.transpose(1, 0).numpy().tolist()
         new_s_value = [1 for _ in range(len(new_s_edge_index))]
         new_s_rel = sub_rel_index.numpy().tolist()
@@ -592,7 +722,7 @@ def rwExtractor(drug_id, edge_index, rel_index, shortest_paths, num_rel, sub_num
         sp_value = edge_index_value[:, 2]
 
         for i in range(len(sp_edge_index)):
-            if sp_value[i] == 1:  ##也是保证多关系的边全部在数据里
+            if sp_value[i] == 1:  # Also ensure all multi-relational edges are in the data
                 continue
             else:
                 s_edge_index.append(sp_edge_index[i].tolist())
@@ -614,10 +744,29 @@ def rwExtractor(drug_id, edge_index, rel_index, shortest_paths, num_rel, sub_num
     return subgraphs, max(max_degree), max(num_rel_update)
 
 def convert(o):
+    """
+    Convert numpy int64 to Python int for JSON serialization.
+    
+    Args:
+        o: Object to convert.
+        
+    Returns:
+        int: Converted integer.
+    """
     if isinstance(o, np.int64): return int(o)
     raise TypeError
 
 class DTADataset(InMemoryDataset):
+    """
+    Dataset class for TIGER model combining molecular and subgraph data.
+    
+    Args:
+        x: Array of drug pairs.
+        y: Array of labels.
+        sub_graph: Dictionary of drug subgraphs.
+        smile_graph: Dictionary of molecular graphs.
+        dt: Dataset type flag.
+    """
     def __init__(self, x=None, y=None, sub_graph=None, smile_graph=None, dt = None):
         super(DTADataset, self).__init__()
 
@@ -628,7 +777,15 @@ class DTADataset(InMemoryDataset):
         self.dt = dt
 
     def read_drug_info(self, drug_id):
-
+        """
+        Read drug information including molecular and subgraph data.
+        
+        Args:
+            drug_id: Drug ID.
+            
+        Returns:
+            tuple: (data_mol, data_graph) PyTorch Geometric Data objects.
+        """
         c_size, features, edge_index, rel_index, sp_edge_index, sp_value, sp_rel, deg = self.smile_graph[str(drug_id)]  ##drug——id是str类型的，不是int型的，这点要注意
         subset, subgraph_edge_index, subgraph_rel, mapping_id, s_edge_index, s_value, s_rel, deg = self.sub_graph[str(drug_id)]
 
@@ -664,10 +821,22 @@ class DTADataset(InMemoryDataset):
         return data_mol, data_graph
 
     def __len__(self):
+        """
+        Return the total number of samples in the dataset.
+        """
         #self.data_mol1, self.data_drug1, self.data_mol2, self.data_drug2
         return len(self.drug_ID)
 
     def __getitem__(self, idx):
+        """
+        Get a single sample from the dataset.
+        
+        Args:
+            idx: Index of the sample.
+            
+        Returns:
+            tuple: (drug1_mol, drug1_subgraph, drug2_mol, drug2_subgraph, labels)
+        """
         drug1_id = self.drug_ID[idx, 0]
         drug2_id = self.drug_ID[idx, 1]
         # labels = int(self.labels[idx])
@@ -683,6 +852,15 @@ class DTADataset(InMemoryDataset):
 
 
 def collate(data_list):
+    """
+    Collate function for batching DTADataset samples.
+    
+    Args:
+        data_list: List of samples.
+        
+    Returns:
+        tuple: Batched PyTorch Geometric Data objects and labels.
+    """
     batchA = Batch.from_data_list([data[0] for data in data_list])
     batchB = Batch.from_data_list([data[1] for data in data_list])
     batchC = Batch.from_data_list([data[2] for data in data_list])
@@ -693,8 +871,23 @@ def collate(data_list):
 
 
 class TIGER_dataset(BaseDataset):
+    """
+    TIGER dataset class for knowledge graph-enhanced DDI prediction.
+    
+    Features:
+    - Molecular graph representation from SMILES
+    - Knowledge graph subgraph extraction via random walks
+    - Dual graph representation (molecular + knowledge graph)
+    - Supports both multiclass and multilabel classification
+    """
     def __init__(self,
                  args:argparse.ArgumentParser):
+        """
+        Initialize TIGER dataset.
+        
+        Args:
+            args: Argument parser with configuration parameters.
+        """
         super().__init__(args)
         self.args = args
         self.interactions = None
@@ -704,6 +897,13 @@ class TIGER_dataset(BaseDataset):
         self.data_sta = None
 
     def load_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
+        """
+        Main data loading method.
+        
+        Args:
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
+        """
         super().load_data(val_ratio, test_ratio)
 
         data_path = self.args.oridata_path
@@ -718,19 +918,19 @@ class TIGER_dataset(BaseDataset):
         num_node, network_edge_index, network_rel_index, num_rel = read_network(data_path + "/kgnet.tsv")
 
         print("load DDI samples!!")
-        # 使用 BaseDataset 新增的辅助方法获得配对与标签划分（原始 ID 字符串形式）
+        # Use the new helper methods in BaseDataset to obtain paired data and label assignments (in the form of original ID strings)
         splits = self.build_pairs_labels_splits(val_ratio=val_ratio, test_ratio=test_ratio,
                                                 random_seed=getattr(self.args, 'seed', 1),
                                                 return_original_ids=True)
 
-        # pairs 是原始字符串 ID，对后续图索引查找保持一致
+        # `pairs` represents the original string IDs, ensuring consistency for subsequent graph index lookups
         train_pairs, train_labels = splits['train']
         val_pairs, val_labels = splits['val']
         test_pairs, test_labels = splits['test']
 
-        # 统计涉及的全部药物 ID，用于生成子图与过滤
+        # This involves counting all the drug IDs to be used for generating subgraphs and filtering
         all_contained_drugs = set(map(str, np.unique(np.concatenate([train_pairs, val_pairs, test_pairs]).ravel())))
-        # 为 smile_graph 中缺失的药物补充占位空图，避免后续 KeyError（如 'nan' 等无效 ID）
+        # Add placeholder empty graphs for missing drugs in `smile_graph` to prevent subsequent `KeyError` (e.g., invalid IDs like 'nan')
         placeholder_mol = (1, [[0 for _ in range(67)]], [[0, 0]], [0], [[0, 0]], [1], [1], 1)
         missing_smiles = []
         for did in all_contained_drugs:
@@ -739,7 +939,6 @@ class TIGER_dataset(BaseDataset):
                 missing_smiles.append(did)
         if len(missing_smiles) > 0:
             print(f"[TIGER_dataset] 为 {len(missing_smiles)} 个在 SMILES 映射中缺失的药物填充占位分子图。示例: {missing_smiles[:8]}")
-
 
         print("generate subgraphs!!")
         drug_subgraphs, max_subgraph_degree, num_rel_update = generate_node_subgraphs(data_path, all_contained_drugs,
@@ -758,7 +957,7 @@ class TIGER_dataset(BaseDataset):
         }
         print(data_sta)
         self.data_sta = data_sta
-        # 将字符串 ID 对转换为 DataLoader 期望的 numpy 数组
+        # Convert string ID pairs to numpy arrays as expected by DataLoader
         def pairs_to_np(pairs):
             return np.array([[p[0], p[1]] for p in pairs], dtype=object)
 
@@ -766,28 +965,28 @@ class TIGER_dataset(BaseDataset):
         val_x = pairs_to_np(val_pairs)
         test_x = pairs_to_np(test_pairs)
 
-        # 根据数据集类型构造标签张量
+        # Construct label tensors based on the dataset type
         if self.args.matrix in ['multilabel', 'twosides']:
-            # 多标签：保持 float32 数组
+            # Multi-label: Keep as float32 array
             train_y = np.array(train_labels, dtype=np.float32)
             val_y = np.array(val_labels, dtype=np.float32)
             test_y = np.array(test_labels, dtype=np.float32)
         else:
-            # 多分类：单整数标签
+            # Multi-class: Single integer label
             train_y = np.array(train_labels, dtype=np.int64)
             val_y = np.array(val_labels, dtype=np.int64)
             test_y = np.array(test_labels, dtype=np.int64)
 
-        # 构造三份 DTADataset
-        # dt 标记用于 __getitem__ 决定标签张量的形状/类型：
-        # - 多分类: 使用 'drugbank'（LongTensor 单标签）
-        # - 多标签: 使用 'twosides'（FloatTensor 多标签向量）
+        # Construct three DTADataset instances
+        # dt flag is used in __getitem__ to determine the shape/type of the label tensor:
+        # - Multi-class: Use 'drugbank' (LongTensor single label)
+        # - Multi-label: Use 'twosides' (FloatTensor multi-label vector)
         dt_flag = 'multilabel' if self.args.matrix in ['multilabel', 'twosides'] else 'multiclass'
         train_data = DTADataset(x=train_x, y=train_y, sub_graph=drug_subgraphs, smile_graph=smile_graph, dt=dt_flag)
         val_data = DTADataset(x=val_x, y=val_y, sub_graph=drug_subgraphs, smile_graph=smile_graph, dt=dt_flag)
         test_data = DTADataset(x=test_x, y=test_y, sub_graph=drug_subgraphs, smile_graph=smile_graph, dt=dt_flag)
 
-        # DataLoader 构建
+        # DataLoader construction
         self.train_loader = DataLoader(train_data, batch_size=self.args.batch, shuffle=True, collate_fn=collate)
         self.val_loader = DataLoader(val_data, batch_size=self.args.batch, shuffle=True, collate_fn=collate)
         self.test_loader = DataLoader(test_data, batch_size=self.args.batch, shuffle=True, collate_fn=collate)

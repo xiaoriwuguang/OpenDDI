@@ -17,14 +17,20 @@ from utils.config import CODE_DIR
 ESPF_path = os.path.join(CODE_DIR,'..','datasets','ESPF')
 
 def get_intervals(l):
-  """For list of lists, gets the cumulative products of the lengths"""
-  intervals = len(l) * [0]
-  # Initalize with 1
-  intervals[0] = 1
-  for k in range(1, len(l)):
-    intervals[k] = (len(l[k]) + 1) * intervals[k - 1]
-
-  return intervals
+    """
+    For list of lists, gets the cumulative products of the lengths.
+    
+    Args:
+        l: List of lists.
+        
+    Returns:
+        list: Cumulative products of lengths.
+    """
+    intervals = len(l) * [0]
+    intervals[0] = 1
+    for k in range(1, len(l)):
+        intervals[k] = (len(l[k]) + 1) * intervals[k - 1]
+    return intervals
 
 possible_atom_list = [
     'C', 'N', 'O', 'S', 'F', 'P', 'Cl', 'Mg', 'Na', 'Br', 'Fe', 'Ca', 'Cu',
@@ -50,131 +56,149 @@ reference_lists = [
 intervals = get_intervals(reference_lists)
 
 def safe_index(l, e):
-  """Gets the index of e in l, providing an index of len(l) if not found"""
-  try:
-    return l.index(e)
-  except:
-    return len(l)
+    """
+    Gets the index of e in l, providing an index of len(l) if not found.
+    
+    Args:
+        l: List to search in.
+        e: Element to find.
+        
+    Returns:
+        int: Index of element or len(l) if not found.
+    """
+    try:
+        return l.index(e)
+    except:
+        return len(l)
 
 def get_feature_list(atom):
-  features = 6 * [0]
-  features[0] = safe_index(possible_atom_list, atom.GetSymbol())
-  features[1] = safe_index(possible_numH_list, atom.GetTotalNumHs())
-  features[2] = safe_index(possible_valence_list, atom.GetImplicitValence())
-  features[3] = safe_index(possible_formal_charge_list, atom.GetFormalCharge())
-  features[4] = safe_index(possible_number_radical_e_list,
+    """
+    Extract atom features as indices into reference lists.
+    
+    Args:
+        atom: RDKit atom object.
+        
+    Returns:
+        list: Feature indices for the atom.
+    """
+    features = 6 * [0]
+    features[0] = safe_index(possible_atom_list, atom.GetSymbol())
+    features[1] = safe_index(possible_numH_list, atom.GetTotalNumHs())
+    features[2] = safe_index(possible_valence_list, atom.GetImplicitValence())
+    features[3] = safe_index(possible_formal_charge_list, atom.GetFormalCharge())
+    features[4] = safe_index(possible_number_radical_e_list,
                            atom.GetNumRadicalElectrons())
-  features[5] = safe_index(possible_hybridization_list, atom.GetHybridization())
-  return features
+    features[5] = safe_index(possible_hybridization_list, atom.GetHybridization())
+    return features
 
 def features_to_id(features, intervals):
-  """Convert list of features into index using spacings provided in intervals"""
-  id = 0
-  for k in range(len(intervals)):
-    id += features[k] * intervals[k]
-
-  # Allow 0 index to correspond to null molecule 1
-  id = id + 1
-  return id
+    """
+    Convert list of features into index using spacings provided in intervals.
+    
+    Args:
+        features: List of feature indices.
+        intervals: Cumulative product intervals.
+        
+    Returns:
+        int: Unique ID for the atom type.
+    """
+    id = 0
+    for k in range(len(intervals)):
+        id += features[k] * intervals[k]
+    id = id + 1  # Allow 0 index to correspond to null molecule 1
+    return id
 
 def atom_to_id(atom):
-  """Return a unique id corresponding to the atom type"""
-  features = get_feature_list(atom)
-  return features_to_id(features, intervals)
+    """
+    Return a unique id corresponding to the atom type.
+    
+    Args:
+        atom: RDKit atom object.
+        
+    Returns:
+        int: Unique atom ID.
+    """
+    features = get_feature_list(atom)
+    return features_to_id(features, intervals)
 
 def one_of_k_encoding(x, allowable_set):
-  if x not in allowable_set:
-    raise Exception("input {0} not in allowable set{1}:".format(
-        x, allowable_set))
-  return list(map(lambda s: x == s, allowable_set))
+    """
+    One-hot encoding for known values.
+    
+    Args:
+        x: Value to encode.
+        allowable_set: Set of allowable values.
+        
+    Returns:
+        list: One-hot encoded vector.
+    """
+    if x not in allowable_set:
+        raise Exception("input {0} not in allowable set{1}:".format(
+            x, allowable_set))
+    return list(map(lambda s: x == s, allowable_set))
 
 def one_of_k_encoding_unk(x, allowable_set):
-  """Maps inputs not in the allowable set to the last element."""
-  if x not in allowable_set:
-    x = allowable_set[-1]
-  return list(map(lambda s: x == s, allowable_set))
+    """
+    One-hot encoding with unknown value mapping to last element.
+    
+    Args:
+        x: Value to encode.
+        allowable_set: Set of allowable values.
+        
+    Returns:
+        list: One-hot encoded vector.
+    """
+    if x not in allowable_set:
+        x = allowable_set[-1]
+    return list(map(lambda s: x == s, allowable_set))
 
 def atom_features(atom,
                   bool_id_feat=False,
                   explicit_H=False,
                   use_chirality=False):
-  if bool_id_feat:
-    return np.array([atom_to_id(atom)])
-  else:
 
-    results = one_of_k_encoding_unk(
-      atom.GetSymbol(),
-      [
-        'C',
-        'N',
-        'O',
-        'S',
-        'F',
-        'Si',
-        'P',
-        'Cl',
-        'Br',
-        'Mg',
-        'Na',
-        'Ca',
-        'Fe',
-        'As',
-        'Al',
-        'I',
-        'B',
-        'V',
-        'K',
-        'Tl',
-        'Yb',
-        'Sb',
-        'Sn',
-        'Ag',
-        'Pd',
-        'Co',
-        'Se',
-        'Ti',
-        'Zn',
-        'H',  # H?
-        'Li',
-        'Ge',
-        'Cu',
-        'Au',
-        'Ni',
-        'Cd',
-        'In',
-        'Mn',
-        'Zr',
-        'Cr',
-        'Pt',
-        'Hg',
-        'Pb',
-        'Unknown'
-      ]) + one_of_k_encoding(atom.GetDegree(),
-                             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) + \
-              one_of_k_encoding_unk(atom.GetImplicitValence(), [0, 1, 2, 3, 4, 5, 6]) + \
-              [atom.GetFormalCharge(), atom.GetNumRadicalElectrons()] + \
-              one_of_k_encoding_unk(atom.GetHybridization(), [
-                Chem.rdchem.HybridizationType.SP, Chem.rdchem.HybridizationType.SP2,
-                Chem.rdchem.HybridizationType.SP3, Chem.rdchem.HybridizationType.
-                                    SP3D, Chem.rdchem.HybridizationType.SP3D2
-              ]) + [atom.GetIsAromatic()]
-    # In case of explicit hydrogen(QM8, QM9), avoid calling `GetTotalNumHs`
-    if not explicit_H:
-      results = results + one_of_k_encoding_unk(atom.GetTotalNumHs(),
-                                                [0, 1, 2, 3, 4])
-    if use_chirality:
-      try:
-        results = results + one_of_k_encoding_unk(
-            atom.GetProp('_CIPCode'),
-            ['R', 'S']) + [atom.HasProp('_ChiralityPossible')]
-      except:
-        results = results + [False, False
-                            ] + [atom.HasProp('_ChiralityPossible')]
-
-    return np.array(results)
+    if bool_id_feat:
+        return np.array([atom_to_id(atom)])
+    else:
+        results = one_of_k_encoding_unk(
+            atom.GetSymbol(),
+            [
+                'C','N','O','S','F','Si','P','Cl','Br','Mg','Na','Ca','Fe','As','Al','I','B','V','K',
+                'Tl','Yb','Sb','Sn','Ag','Pd','Co','Se','Ti','Zn','H','Li','Ge','Cu','Au','Ni','Cd',
+                'In','Mn','Zr','Cr','Pt','Hg','Pb','Unknown'
+            ]) + one_of_k_encoding(atom.GetDegree(), [0,1,2,3,4,5,6,7,8,9,10]) + \
+                one_of_k_encoding_unk(atom.GetImplicitValence(), [0,1,2,3,4,5,6]) + \
+                [atom.GetFormalCharge(), atom.GetNumRadicalElectrons()] + \
+                one_of_k_encoding_unk(atom.GetHybridization(), [
+                    Chem.rdchem.HybridizationType.SP, Chem.rdchem.HybridizationType.SP2,
+                    Chem.rdchem.HybridizationType.SP3, Chem.rdchem.HybridizationType.SP3D,
+                    Chem.rdchem.HybridizationType.SP3D2
+                ]) + [atom.GetIsAromatic()]
+        
+        if not explicit_H:
+            results = results + one_of_k_encoding_unk(atom.GetTotalNumHs(), [0,1,2,3,4])
+        
+        if use_chirality:
+            try:
+                results = results + one_of_k_encoding_unk(
+                    atom.GetProp('_CIPCode'), ['R','S']) + [atom.HasProp('_ChiralityPossible')]
+            except:
+                results = results + [False, False] + [atom.HasProp('_ChiralityPossible')]
+        
+        return np.array(results)
 
 def drug2emb_encoder(x, dbpe, words2idx_d):
-    # Sequence encoder parameter
+    """
+    Encode SMILES string to BPE embedding indices.
+    
+    Args:
+        x: SMILES string.
+        dbpe: BPE encoder object.
+        words2idx_d: Dictionary mapping words to indices.
+        
+    Returns:
+        tuple: (indices, input_mask) for the encoded SMILES.
+    """
     max_d = 50
     t1 = dbpe.process_line(x).split()
     try:
@@ -191,8 +215,16 @@ def drug2emb_encoder(x, dbpe, words2idx_d):
     return i, np.asarray(input_mask)
 
 class MolGraphDataset(Dataset):
+    """
+    Dataset class for molecular graph data with SMILES strings.
+    
+    Args:
+        data_df: DataFrame containing drug pairs and labels.
+        id2smiles: Dictionary mapping drug IDs to SMILES strings.
+        prediction: Whether this is for prediction task (affects label type).
+    """
     def __init__(self, data_df, id2smiles, prediction=False):
-        # word
+        # Load BPE vocabulary for SMILES encoding
         vocab_path = os.path.join(ESPF_path,'drug_codes_chembl.txt')
         bpe_codes_drug = codecs.open(vocab_path)
         dbpe = BPE(bpe_codes_drug, merges=-1, separator='')
@@ -224,22 +256,27 @@ class MolGraphDataset(Dataset):
                 self.smiles2.append(s2)
                 
                 if prediction:
-                    # 多标签：保持 float32 数组
                     self.targets.append(float(row['ddi']))
                 else:
-                    # 多分类：单整数标签
                     self.targets.append(int(row['ddi']))
 
         self.smiles1 = np.array(self.smiles1)
         self.smiles2 = np.array(self.smiles2)
         if prediction:
-             self.targets = np.array(self.targets, dtype=np.float32)
+            self.targets = np.array(self.targets, dtype=np.float32)
         else:
-             self.targets = np.array(self.targets, dtype=np.int64)
+            self.targets = np.array(self.targets, dtype=np.int64)
 
     def __getitem__(self, index):
-
-        # num_size = Chem.MolFromSmiles(self.smiles1[index]).GetNumAtoms()
+        """
+        Get a single sample from the dataset.
+        
+        Args:
+            index: Index of the sample.
+            
+        Returns:
+            tuple: ((fts1, adjs1), (fts2, adjs2), num_size, targets, d1, d2, mask_1, mask_2)
+        """
         fts1, adjs1 = smile_to_graph(self.smiles1[index])
         fts2, adjs2 = smile_to_graph(self.smiles2[index])
 
@@ -252,18 +289,38 @@ class MolGraphDataset(Dataset):
         return (fts1, adjs1), (fts2, adjs2), num_size, targets, d1, d2, mask_1, mask_2
 
     def __len__(self):
+        """
+        Return the total number of samples in the dataset.
+        """
         return len(self.smiles1)
     
 def smile_to_graph(smile):
+    """
+    Convert SMILES string to molecular graph representation.
+    
+    Args:
+        smile: SMILES string.
+        
+    Returns:
+        tuple: (node_features, adjacency_matrix) for the molecule.
+    """
     molecule = Chem.MolFromSmiles(smile)
     n_atoms = molecule.GetNumAtoms()
     atoms = [molecule.GetAtomWithIdx(i) for i in range(n_atoms)]
     adjacency = Chem.rdmolops.GetAdjacencyMatrix(molecule)
     node_features = np.array([atom_features(atom) for atom in atoms])
-
     return node_features, adjacency
 
 def molgraph_collate_fn(data):
+    """
+    Collate function for batching molecular graph data.
+    
+    Args:
+        data: List of samples from MolGraphDataset.
+        
+    Returns:
+        tuple: Batched tensors for model input.
+    """
     n_samples = len(data)
     (fts1, adjs1), (fts2, adjs2), num_size, targets_0, d1, d2, mask_1, mask_2 = data[0]
 
@@ -295,7 +352,6 @@ def molgraph_collate_fn(data):
     mask_1_tensor = torch.zeros(n_samples, n_mask)
     mask_2_tensor = torch.zeros(n_samples, n_mask)
 
-
     for i in range(n_samples):
         (fts1, adjs1), (fts2, adjs2), num_size, target, d1, d2, mask_1, mask_2 = data[i]
 
@@ -317,12 +373,33 @@ def molgraph_collate_fn(data):
     return node_tensor_1, adjacency_tensor_1, node_tensor_2, adjacency_tensor_2, num_size_tensor, target_tensor, d1_emb_tensor, d2_emb_tensor, mask_1_tensor, mask_2_tensor
 
 class MVA_dataset(BaseDataset):
-    def __init__(self,
-                 args:argparse.ArgumentParser):
+    """
+    MVA dataset class for multi-view attention DDI prediction.
+    
+    Features:
+    - Molecular graph representation from SMILES
+    - BPE encoding for SMILES sequences
+    - Atom feature extraction with multiple attribute types
+    - Supports both multiclass and multilabel classification
+    """
+    def __init__(self, args: argparse.ArgumentParser):
+        """
+        Initialize MVA dataset.
+        
+        Args:
+            args: Argument parser with configuration parameters.
+        """
         super().__init__(args)
         self.args = args
 
     def load_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
+        """
+        Main data loading method.
+        
+        Args:
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
+        """
         super().load_data(val_ratio, test_ratio)
         smiles_path = self.args.oriSmiles_path
         ddi_path = self.args.matrix_path
@@ -345,23 +422,19 @@ class MVA_dataset(BaseDataset):
         val_df = ddi_df.iloc[n_train:n_train+n_val]
         test_df = ddi_df.iloc[n_train+n_val:]
 
-        # 根据数据集类型构造标签张量
+        # Create datasets based on task type
         if self.args.matrix in ['multilabel', 'twosides']:
-            # 多标签：保持 float32 数组
-            train_dataset = MolGraphDataset(train_df, id2smiles, prediction=True) # prediction=True for float labels
+            train_dataset = MolGraphDataset(train_df, id2smiles, prediction=True)
             validation_dataset = MolGraphDataset(val_df, id2smiles, prediction=True)
             test_dataset = MolGraphDataset(test_df, id2smiles, prediction=True)
         else:
-            # 多分类：单整数标签
-            train_dataset = MolGraphDataset(train_df, id2smiles, prediction=False) # prediction=False for int labels
+            train_dataset = MolGraphDataset(train_df, id2smiles, prediction=False)
             validation_dataset = MolGraphDataset(val_df, id2smiles, prediction=False)
             test_dataset = MolGraphDataset(test_df, id2smiles, prediction=False)
 
         self.train_loader = DataLoader(train_dataset, batch_size=self.args.batch,
                                   shuffle=True, collate_fn=molgraph_collate_fn)
-
         self.val_loader = DataLoader(validation_dataset, batch_size=self.args.batch,
                                        shuffle=False, collate_fn=molgraph_collate_fn)
-
         self.test_loader = DataLoader(test_dataset, batch_size=self.args.batch,
                                  shuffle=True, collate_fn=molgraph_collate_fn)

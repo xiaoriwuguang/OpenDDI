@@ -3,140 +3,211 @@ Models
 
 model_manager
 -------------
-.. automodule:: models.model_manager
+.. automodule:: openddi.models.model_manager
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 CASTER
 ------
-.. automodule:: models.CASTER
+.. automodule:: openddi.models.CASTER
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 ConvLSTM
 --------
-.. automodule:: models.ConvLSTM
+.. automodule:: openddi.models.ConvLSTM
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 DDIMDL
 ------
-.. automodule:: models.DDIMDL
+.. automodule:: openddi.models.DDIMDL
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 DDKG
 ----
-.. automodule:: models.DDKG
+.. automodule:: openddi.models.DDKG
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 DeepDDI
 -------
-.. automodule:: models.DeepDDI
+.. automodule:: openddi.models.DeepDDI
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
+
+DSNDDI
+------
+.. automodule:: openddi.models.DSNDDI
+   :members:
+   :special-members: __init__
+   :show-inheritance:
+   :no-index:
 
 ExDDI
 -----
-.. automodule:: models.ExDDI
+.. automodule:: openddi.models.ExDDI
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 GOGNN
 -----
-.. automodule:: models.GOGNN
+.. automodule:: openddi.models.GOGNN
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 KGNN
 ----
-.. automodule:: models.KGNN
+.. automodule:: openddi.models.KGNN
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 LaGAT
 -----
-.. automodule:: models.LaGAT
+.. automodule:: openddi.models.LaGAT
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 MIRACLE
 -------
-.. automodule:: models.MIRACLE
+.. automodule:: openddi.models.MIRACLE
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 MKGFENN
 -------
-.. automodule:: models.MKGFENN
+.. automodule:: openddi.models.MKGFENN
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 MMDGDTI
 -------
-.. automodule:: models.MMDGDTI
+.. automodule:: openddi.models.MMDGDTI
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 MRCGNN
 ------
-.. automodule:: models.MRCGNN
+.. automodule:: openddi.models.MRCGNN
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 MUFFIN
 ------
-.. automodule:: models.MUFFIN
+.. automodule:: openddi.models.MUFFIN
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 MVA
 ---
-.. automodule:: models.MVA
+.. automodule:: openddi.models.MVA
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 PHGLDDI
 -------
-.. automodule:: models.PHGLDDI
+.. automodule:: openddi.models.PHGLDDI
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 SumGNN
 ------
-.. automodule:: models.SumGNN
+.. automodule:: openddi.models.SumGNN
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 TIGER
 -----
-.. automodule:: models.TIGER
+.. automodule:: openddi.models.TIGER
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
 
 ZeroDDI
 -------
-.. automodule:: models.ZeroDDI
+.. automodule:: openddi.models.ZeroDDI
    :members:
    :special-members: __init__
    :show-inheritance:
+   :no-index:
+
+Submodules
+----------
+
+gognn
+~~~~~
+.. automodule:: openddi.models.gognn.gognn
+   :members:
+   :special-members: __init__
+   :show-inheritance:
+   :no-index:
+
+muffin
+~~~~~~
+.. automodule:: openddi.models.muffin.muffin
+   :members:
+   :special-members: __init__
+   :show-inheritance:
+   :no-index:
+
+mva
+~~~
+.. automodule:: openddi.models.mva.mva
+   :members:
+   :special-members: __init__
+   :show-inheritance:
+   :no-index:
+
+tiger
+~~~~~
+.. automodule:: openddi.models.tiger.tiger
+   :members:
+   :special-members: __init__
+   :show-inheritance:
+   :no-index:
+
+GraphTransformer
+~~~~~~~~~~~~~~~~
+.. automodule:: openddi.models.tiger.GraphTransformer
+   :members:
+   :special-members: __init__
+   :show-inheritance:
+   :no-index:

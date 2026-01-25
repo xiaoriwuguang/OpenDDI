@@ -14,6 +14,16 @@ from .GraphTransformer import GraphTransformer
 import os
 
 class NodeFeatures(torch.nn.Module):
+    """
+    Node feature encoder with degree information.
+    
+    Args:
+        degree: Maximum node degree.
+        feature_num: Number of input features.
+        embedding_dim: Output embedding dimension.
+        layer: Number of layers for initialization (default=2).
+        type: Type of features ('graph' or 'node') (default='graph').
+    """
     def __init__(self, degree, feature_num, embedding_dim, layer=2, type='graph'):
         super(NodeFeatures, self).__init__()
 
@@ -26,11 +36,22 @@ class NodeFeatures(torch.nn.Module):
         self.apply(lambda module: init_params(module, layers=layer))
 
     def reset_parameters(self):
+        """
+        Reset model parameters.
+        """
         self.node_encoder.reset_parameters()
         self.degree_encoder.reset_parameters()
 
     def forward(self, data):
-
+        """
+        Encode node features with degree information.
+        
+        Args:
+            data: Graph data object.
+            
+        Returns:
+            torch.Tensor: Encoded node features.
+        """
         row, col = data.edge_index
         x_degree = degree(col, data.x.size(0), dtype=data.x.dtype)
         node_feature = self.node_encoder(data.x)
@@ -39,6 +60,31 @@ class NodeFeatures(torch.nn.Module):
         return node_feature
 
 class TIGER(torch.nn.Module):
+    """
+    TIGER model for knowledge graph-enhanced DDI prediction.
+    
+    Features:
+    - Molecular graph transformer
+    - Knowledge graph transformer
+    - Mutual information maximization
+    - Multi-view representation learning
+    
+    Args:
+        max_layer: Maximum number of transformer layers (default=6).
+        num_features_drug: Number of drug features (default=78).
+        num_nodes: Number of nodes in knowledge graph (default=200).
+        num_relations_mol: Number of molecular relation types (default=10).
+        num_relations_graph: Number of graph relation types (default=10).
+        output_dim: Output dimension (default=64).
+        max_degree_graph: Maximum degree in molecular graph (default=100).
+        max_degree_node: Maximum degree in knowledge graph (default=100).
+        sub_coeff: Subgraph coefficient for loss (default=0.2).
+        mi_coeff: Mutual information coefficient for loss (default=0.5).
+        dropout: Dropout rate (default=0.2).
+        device: Computation device (default='cuda').
+        num_rel: Number of relation types for classification.
+        args: Configuration arguments.
+    """
     def __init__(self, max_layer = 6, num_features_drug = 78, num_nodes = 200, num_relations_mol = 10, num_relations_graph = 10, output_dim=64, max_degree_graph=100, max_degree_node=100, sub_coeff = 0.2, mi_coeff = 0.5, dropout=0.2, device = 'cuda', num_rel = None, args=None):
         super(TIGER, self).__init__()
 
@@ -92,7 +138,15 @@ class TIGER(torch.nn.Module):
         self.cdan_dim = output_dim * 2
 
     def to(self, device):
-
+        """
+        Move model to specified device.
+        
+        Args:
+            device: Target device.
+            
+        Returns:
+            TIGER: Model on target device.
+        """
         self.mol_atom_feature.to(device)
         self.drug_node_feature.to(device)
 
@@ -108,9 +162,14 @@ class TIGER(torch.nn.Module):
     
     def loss(self, pred, label):
         """
-        任务-损失映射：
-        - 多标签(multilabel/twosides): BCEWithLogitsLoss，pred [B,C], label float [B,C]
-        - 多分类(其他): CrossEntropyLoss，pred [B,C], label long [B]
+        Compute supervised loss for DDI prediction.
+        
+        Args:
+            pred: Model predictions.
+            label: Ground truth labels.
+            
+        Returns:
+            torch.Tensor: Combined loss value.
         """
         if self.args.matrix in ['multilabel', 'twosides']:
             return nn.BCEWithLogitsLoss()(pred, label.float()) + self.reserved_loss
@@ -118,7 +177,9 @@ class TIGER(torch.nn.Module):
             return nn.CrossEntropyLoss()(pred, label.long()) + self.reserved_loss
 
     def reset_parameters(self):
-
+        """
+        Reset all model parameters.
+        """
         self.mol_atom_feature.reset_parameters()
         self.drug_node_feature.reset_parameters()
 
@@ -126,6 +187,15 @@ class TIGER(torch.nn.Module):
         self.node_representation_learning.reset_parameters()
 
     def forward(self, data):
+        """
+        Forward pass of TIGER model.
+        
+        Args:
+            data: Tuple containing (drug1_mol, drug1_subgraph, drug2_mol, drug2_subgraph)
+            
+        Returns:
+            torch.Tensor: DDI prediction scores.
+        """
         drug1_mol, drug1_subgraph, drug2_mol, drug2_subgraph = data[0].to(self.device), data[1].to(self.device), data[2].to(self.device), data[3].to(self.device)
 
         mol1_atom_feature = self.mol_atom_feature(drug1_mol)
@@ -155,6 +225,16 @@ class TIGER(torch.nn.Module):
         return score
 
     def MI(self, graph_embeddings, sub_embeddings):
+        """
+        Compute mutual information between graph and subgraph embeddings.
+        
+        Args:
+            graph_embeddings: Graph-level embeddings.
+            sub_embeddings: Subgraph-level embeddings.
+            
+        Returns:
+            torch.Tensor: Discriminator logits.
+        """
         idx = torch.arange(graph_embeddings.shape[0] - 1, -1, -1)
         if graph_embeddings.shape[0] > 2:
             idx[len(idx) // 2] = idx[len(idx) // 2 + 1]
@@ -167,7 +247,15 @@ class TIGER(torch.nn.Module):
         return self.disc(sub, c_0, c_1)
 
     def loss_MI(self, logits):
-
+        """
+        Compute mutual information loss.
+        
+        Args:
+            logits: Discriminator logits.
+            
+        Returns:
+            torch.Tensor: Binary cross-entropy loss.
+        """
         num_logits = logits.shape[0] // 2
         temp = torch.rand(num_logits)
         lbl = torch.cat([torch.ones_like(temp), torch.zeros_like(temp)], dim=0).float().to(self.device)
@@ -175,12 +263,27 @@ class TIGER(torch.nn.Module):
         return self.b_xent(logits.view([1,-1]), lbl.view([1, -1]))
 
     def save(self, path):
+        """
+        Save model state to file.
+        
+        Args:
+            path: Directory path for saving.
+            
+        Returns:
+            str: Path to saved model file.
+        """
         save_path = os.path.join(path, self.__class__.__name__+'.pt')
         torch.save(self.state_dict(), save_path)
         return save_path
 
 
 class Discriminator(nn.Module):
+    """
+    Discriminator for mutual information estimation.
+    
+    Args:
+        n_h: Hidden dimension size.
+    """
     def __init__(self, n_h):
         super(Discriminator, self).__init__()
         self.f_k = nn.Bilinear(n_h, n_h, 1)
@@ -189,12 +292,31 @@ class Discriminator(nn.Module):
             self.weights_init(m)
 
     def weights_init(self, m):
+        """
+        Initialize discriminator weights.
+        
+        Args:
+            m: Module to initialize.
+        """
         if isinstance(m, nn.Bilinear):
             torch.nn.init.xavier_uniform_(m.weight.data)
             if m.bias is not None:
                 m.bias.data.fill_(0.0)
 
     def forward(self, c, h_pl, h_mi, s_bias1=None, s_bias2=None):
+        """
+        Forward pass for discriminator.
+        
+        Args:
+            c: Context embeddings.
+            h_pl: Positive embeddings.
+            h_mi: Negative embeddings.
+            s_bias1: Optional bias for positive scores.
+            s_bias2: Optional bias for negative scores.
+            
+        Returns:
+            torch.Tensor: Discriminator logits.
+        """
         c_x = c
         sc_1 = self.f_k(h_pl, c_x)
         sc_2 = self.f_k(h_mi, c_x)
@@ -208,6 +330,13 @@ class Discriminator(nn.Module):
         return logits
 
 def init_params(module, layers=2):
+    """
+    Initialize module parameters.
+    
+    Args:
+        module: Module to initialize.
+        layers: Number of layers for initialization scaling (default=2).
+    """
     if isinstance(module, torch.nn.Linear):
         module.weight.data.normal_(mean=0.0, std=0.02 / math.sqrt(layers))
         if module.bias is not None:

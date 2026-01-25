@@ -19,6 +19,17 @@ from torch_geometric.nn.conv import MessagePassing
 
 
 class GraphTransformerEncode(torch.nn.Module):
+    """
+    Graph Transformer encoder layer.
+    
+    Args:
+        num_heads: Number of attention heads.
+        in_dim: Input dimension.
+        dim_forward: Feed-forward dimension.
+        rel_encoder: Relation encoder module.
+        spatial_encoder: Spatial encoder module.
+        dropout: Dropout rate.
+    """
     def __init__(self, num_heads, in_dim, dim_forward, rel_encoder, spatial_encoder, dropout):
         super(GraphTransformerEncode, self).__init__()
 
@@ -41,6 +52,9 @@ class GraphTransformerEncode(torch.nn.Module):
         self.dropout2 = torch.nn.Dropout(dropout)
 
     def reset_parameters(self):
+        """
+        Reset model parameters.
+        """
         self.ffn[0].reset_parameters()
         self.ffn[2].reset_parameters()
 
@@ -49,7 +63,18 @@ class GraphTransformerEncode(torch.nn.Module):
         self.layernorm2.reset_parameters()
 
     def forward(self, feature, sp_edge_index, sp_value, edge_rel):
-
+        """
+        Forward pass for graph transformer encoder.
+        
+        Args:
+            feature: Node features.
+            sp_edge_index: Shortest path edge indices.
+            sp_value: Shortest path distances.
+            edge_rel: Edge relation types.
+            
+        Returns:
+            tuple: (output features, attention weights)
+        """
         x_norm = self.layernorm1(feature)
         attn_output, attn_weight = self.multiHeadAttention(x_norm, sp_edge_index, sp_value, edge_rel)
         attn_output = self.dropout1(attn_output)
@@ -64,6 +89,12 @@ class GraphTransformerEncode(torch.nn.Module):
         return out2, attn_weight
 
 class SpatialEncoding(torch.nn.Module):
+    """
+    Spatial encoding module for graph distances.
+    
+    Args:
+        dim_model: Dimension of spatial encoding.
+    """
     def __init__(self, dim_model):
         super(SpatialEncoding, self).__init__()
 
@@ -76,10 +107,22 @@ class SpatialEncoding(torch.nn.Module):
         )
 
     def reset_parameters(self):
+        """
+        Reset model parameters.
+        """
         self.fnn[0].reset_parameters()
         self.fnn[2].reset_parameters()
 
     def forward(self, lap):
+        """
+        Encode spatial distances.
+        
+        Args:
+            lap: Shortest path distances.
+            
+        Returns:
+            torch.Tensor: Spatial encoding.
+        """
         lap_ = torch.unsqueeze(lap, dim=-1) ##[n_edges, 1]
         out = self.fnn(lap_)
 
@@ -87,6 +130,16 @@ class SpatialEncoding(torch.nn.Module):
 
 
 class MultiheadAttention(MessagePassing):
+    """
+    Multi-head attention for graph transformer.
+    
+    Args:
+        dim_model: Model dimension.
+        num_heads: Number of attention heads.
+        rel_encoder: Relation encoder.
+        spatial_encoder: Spatial encoder.
+        **kwargs: Additional MessagePassing arguments.
+    """
     def __init__(self, dim_model, num_heads, rel_encoder, spatial_encoder, **kwargs):
         kwargs.setdefault('aggr', 'add')
         super().__init__(**kwargs)
@@ -102,7 +155,6 @@ class MultiheadAttention(MessagePassing):
 
         self.spatial_encoding = spatial_encoder
 
-
         assert dim_model % num_heads == 0
         self.depth = self.d_model // num_heads
 
@@ -113,6 +165,9 @@ class MultiheadAttention(MessagePassing):
         self.dense = Linear(dim_model, dim_model)
 
     def reset_parameters(self):
+        """
+        Reset model parameters.
+        """
         self.rel_embedding.reset_parameters()
         self.rel_encoding[0].reset_parameters()
         self.spatial_encoding.reset_parameters()
@@ -123,6 +178,18 @@ class MultiheadAttention(MessagePassing):
         self.dense.reset_parameters()
 
     def softmax_kernel_transformation(self, data, is_query, projection_matrix=None, numerical_stabilizer=0.000001):
+        """
+        Apply softmax kernel transformation for efficient attention.
+        
+        Args:
+            data: Input data.
+            is_query: Whether input is query.
+            projection_matrix: Projection matrix.
+            numerical_stabilizer: Numerical stability term.
+            
+        Returns:
+            torch.Tensor: Transformed data.
+        """
         data_normalizer = 1.0 / torch.sqrt(torch.sqrt(torch.tensor(data.shape[-1], dtype=torch.float32)))
         data = data_normalizer * data
         ratio = data_normalizer
@@ -147,13 +214,34 @@ class MultiheadAttention(MessagePassing):
         return data_dash
 
     def denominator(self, qs, ks):
+        """
+        Compute attention denominator for normalization.
+        
+        Args:
+            qs: Query embeddings.
+            ks: Key embeddings.
+            
+        Returns:
+            torch.Tensor: Normalization denominator.
+        """
         ##qs [num_node, num_heads, depth]
         all_ones = torch.ones([ks.shape[0]]).to(qs.device)
         ks_sum = torch.einsum("nhm,n->hm", ks, all_ones)  # ks_sum refers to O_k in the paper
         return torch.einsum("nhm,hm->nh", qs, ks_sum)
 
     def forward(self, x, sp_edge_index, sp_value, edge_rel):
-
+        """
+        Forward pass for multi-head attention.
+        
+        Args:
+            x: Node features.
+            sp_edge_index: Shortest path edge indices.
+            sp_value: Shortest path distances.
+            edge_rel: Edge relation types.
+            
+        Returns:
+            tuple: (attention output, attention weights)
+        """
         rel_embedding = self.rel_embedding(edge_rel)
         q = self.wq(x)
         k = self.wk(x)
@@ -188,12 +276,23 @@ class MultiheadAttention(MessagePassing):
 
 
 class GraphTransformer(torch.nn.Module):
+    """
+    Graph Transformer model for molecular representation learning.
+    
+    Args:
+        layer_num: Number of transformer layers (default=3).
+        embedding_dim: Embedding dimension (default=64).
+        num_heads: Number of attention heads (default=4).
+        num_rel: Number of relation types (default=10).
+        dropout: Dropout rate (default=0.2).
+        type: Type of representation ('graph' or 'node') (default='graph').
+    """
     def __init__(self, layer_num = 3, embedding_dim = 64, num_heads = 4, num_rel = 10, dropout = 0.2, type = 'graph'): ##type指示的是graph还是node，也就是对应的是图级别的表示学习，还是节点级别的表示学习
         super(GraphTransformer, self).__init__()
 
         self.type = type
-        self.rel_encoder = torch.nn.Embedding(num_rel, embedding_dim)  ##权重共享的
-        self.spatial_encoder = SpatialEncoding(embedding_dim)  ##这两个是权重共享的
+        self.rel_encoder = torch.nn.Embedding(num_rel, embedding_dim)  # Weight sharing
+        self.spatial_encoder = SpatialEncoding(embedding_dim)  # Weight sharing
 
         self.encoder = torch.nn.ModuleList()
         for i in range(layer_num - 1):
@@ -201,13 +300,24 @@ class GraphTransformer(torch.nn.Module):
                                                        rel_encoder = self.rel_encoder, spatial_encoder = self.spatial_encoder, dropout=dropout))
 
     def reset_parameters(self):
+        """
+        Reset model parameters.
+        """
         for e in self.encoder:
             e.reset_parameters()
 
-
     def forward(self, feature, data):
-
-        ##首先就是按照edge index计算attn_weight, 然后按照权重聚合就可以了！！
+        """
+        Forward pass for graph transformer.
+        
+        Args:
+            feature: Input node features.
+            data: Graph data object.
+            
+        Returns:
+            tuple: (graph representation, subgraph representations, attention weights)
+        """
+        # First, compute attn_weight according to edge index, then aggregate according to the weights!
         x = feature
         graph_embedding_layer = []
         attn_layer = []
@@ -216,27 +326,27 @@ class GraphTransformer(torch.nn.Module):
             graph_embedding_layer.append(x)
             attn_layer.append(attn)
 
-        #all_out = torch.stack([x for x in graph_embedding_layer])
-
+        # all_out = torch.stack([x for x in graph_embedding_layer])
 
         if self.type == 'graph':
-            ##pooling
+            # Pooling
             sub_representation = []
             for index, drug_mol_graph in enumerate(data.to_data_list()):
-                sub_embedding = x[(data.batch == index).nonzero().flatten()]  ##第index个图中的各个节点的表示，[atom_number, emd_dim]
+                # The representation of each node in the index-th graph, shape: [atom_number, emd_dim]
+                sub_embedding = x[(data.batch == index).nonzero().flatten()]
                 sub_representation.append(sub_embedding)
-            representation = global_mean_pool(x, batch=data.batch)  ##每个drug分子的图的表示
+            representation = global_mean_pool(x, batch=data.batch)  # Representation of each drug molecule's graph
         else:
-            ##只返回第一个
+            # only return the first one
             sub_representation = []
             for index, drug_subgraph in enumerate(data.to_data_list()):
                 sub_embedding = x[(data.batch == index).nonzero().flatten()]
-                #print(sub_embedding.shape)
-                sub_representation.append(sub_embedding) ##只取那个节点的embedding
-            #print(x.shape)
-            #print(data.id.shape)
+                # print(sub_embedding.shape)
+                sub_representation.append(sub_embedding)  # only take the embedding of that node
+            # print(x.shape)
+            # print(data.id.shape)
             representation = x[data.id.nonzero().flatten()]
 
         return representation, sub_representation, attn_layer
 
-        ##对于节点级别的表示，需要每一层的级联，然后做最后的互信息最大化，这个层级的优化可能要考虑一下，但是最终落到的还是节点和图
+        # For node-level representation, we need to cascade each layer and then do the final mutual information maximization. This layer-level optimization may need to be considered, but in the end, it still falls on the nodes and the graph.

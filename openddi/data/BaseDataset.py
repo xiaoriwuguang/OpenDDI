@@ -12,26 +12,28 @@ from torch_geometric.data import Data
 
 
 # =============================================================================
-# 数据加载和预处理模块 (Data Loading and Preprocessing Module)
+# Data Loading and Preprocessing Module
 # =============================================================================
 
 class DataLoadingModule:
     """
-    数据加载和预处理模块
-    负责读取嵌入文件、配对数据文件以及基本的数据预处理
+    Data loading and preprocessing module.
+    
+    Responsible for reading embedding files, paired data files, and basic data preprocessing.
     """
 
     @staticmethod
     def read_id_embedding_pt(embedding_paths: Union[str, List[str]]) -> Tuple[Dict[str, np.ndarray], int]:
         """
-        读取单个或多个模态的嵌入文件并将嵌入向量连接起来。
+        Read single or multiple modality embedding files and concatenate embedding vectors.
 
         Args:
-            embedding_paths: 嵌入文件路径或路径列表
+            embedding_paths: Path or list of paths to embedding files.
 
         Returns:
-            id2vec: 映射 ID 到连接后的嵌入向量（numpy 数组）
-            dim: 连接后嵌入向量的总维度
+            Tuple containing:
+            - id2vec: Dictionary mapping IDs to concatenated embedding vectors
+            - total_dim: Total dimension of concatenated embedding vectors
         """
         if isinstance(embedding_paths, str):
             embedding_paths = [embedding_paths]
@@ -39,32 +41,32 @@ class DataLoadingModule:
         id2vec = {}
         total_dim = 0
 
-        # 遍历所有模态的嵌入路径
+        # Iterate through all modality embedding paths
         for path in embedding_paths:
             if not os.path.isfile(path):
                 raise FileNotFoundError(f"未找到嵌入文件: {path}")
 
-            # 读取嵌入文件
+            # Read embedding file
             data = torch.load(path)
             if not isinstance(data, dict):
                 raise ValueError(f"期望 pt 文件中是 dict，但得到的是 {type(data)}")
 
-            # 转换为 numpy 数组，保证 float32
+            # Convert to numpy arrays, ensuring float32
             current_id2vec = {str(k): v.detach().cpu().numpy().astype(np.float32) for k, v in data.items()}
 
-            # 获取当前模态的维度
+            # Get current modality dimension
             example_key = next(iter(current_id2vec))
             current_dim = current_id2vec[example_key].shape[0]
             total_dim += current_dim
 
-            # 初始化 id2vec 或连接嵌入
+            # Initialize id2vec or concatenate embeddings
             if not id2vec:
                 id2vec = current_id2vec
             else:
-                # 确保 ID 一致
+                # Ensure ID consistency
                 if set(id2vec.keys()) != set(current_id2vec.keys()):
                     raise ValueError(f"嵌入文件 {path} 的 ID 集与之前的嵌入不一致")
-                # 连接每个 ID 的嵌入向量
+                # Connect the embedding vectors of each ID
                 for id_ in id2vec:
                     id2vec[id_] = np.concatenate([id2vec[id_], current_id2vec[id_]], axis=0)
 
@@ -73,14 +75,15 @@ class DataLoadingModule:
     @staticmethod
     def read_id_embedding_pt_split(embedding_paths: List[str]) -> Tuple[Dict[int, Dict[str, np.ndarray]], List[int]]:
         """
-        读取多个模态的嵌入文件并分别存储嵌入向量。
+        Read multiple modality embedding files and store embedding vectors separately.
 
         Args:
-            embedding_paths: 嵌入文件路径列表
+            embedding_paths: List of paths to embedding files.
 
         Returns:
-            modal2id2vec: 映射模态索引到该模态的 id2vec 字典
-            dims: 每个模态的嵌入向量维度列表
+            Tuple containing:
+            - modal2id2vec: Dictionary mapping modality indices to id2vec dictionaries
+            - dims: List of embedding vector dimensions for each modality
         """
         modal2id2vec = {}
         dims = []
@@ -100,7 +103,7 @@ class DataLoadingModule:
 
             modal2id2vec[idx] = current_id2vec
 
-        # 验证所有模态的 ID 集是否一致
+        # Verify that ID sets are consistent across all modalities
         id_sets = [set(id2vec.keys()) for id2vec in modal2id2vec.values()]
         if len(set(frozenset(id_set) for id_set in id_sets)) > 1:
             raise ValueError("不同模态的嵌入文件中 ID 集不一致")
@@ -110,14 +113,15 @@ class DataLoadingModule:
     @staticmethod
     def read_multi_pairs_and_remap(matrix_path: str) -> Tuple[pd.DataFrame, int]:
         """
-        读取多分类配对数据并进行标签重映射
+        Read multi-class paired data and perform label remapping.
 
         Args:
-            matrix_path: 多分类数据文件路径
+            matrix_path: Path to multi-class data file.
 
         Returns:
-            df: 处理后的数据框，包含 id1, id2, ddi 列
-            num_relations: 关系类型数量
+            Tuple containing:
+            - df: Processed DataFrame containing id1, id2, ddi columns
+            - num_relations: Number of relation types
         """
         if not os.path.isfile(matrix_path):
             raise FileNotFoundError(f"未找到多分类文件: {matrix_path}")
@@ -136,7 +140,7 @@ class DataLoadingModule:
         df2 = df2.dropna(subset=['id1', 'id2', 'ddi_raw']).copy()
         df2['ddi_raw'] = df2['ddi_raw'].astype(int)
 
-        # 按唯一值重映射为连续标签
+        # Remap to continuous labels based on unique values
         unique_raw = np.sort(df2['ddi_raw'].unique())
         raw2new = {raw: i for i, raw in enumerate(unique_raw)}
         df2['ddi'] = df2['ddi_raw'].map(raw2new).astype(int)
@@ -147,14 +151,15 @@ class DataLoadingModule:
     @staticmethod
     def read_multilabel_pairs_and_remap(matrix_path: str) -> Tuple[pd.DataFrame, int]:
         """
-        读取多标签配对数据
+        Read multi-label paired data.
 
         Args:
-            matrix_path: 多标签数据文件路径
+            matrix_path: Path to multi-label data file.
 
         Returns:
-            df: 处理后的数据框，包含 id1, id2, ddi 列
-            num_ddi: 标签数量
+            Tuple containing:
+            - df: Processed DataFrame containing id1, id2, ddi columns
+            - num_ddi: Number of labels
         """
         if not os.path.isfile(matrix_path):
             raise FileNotFoundError(f"未找到多标签分类文件 {matrix_path}")
@@ -177,29 +182,30 @@ class DataLoadingModule:
 
 
 # =============================================================================
-# 特征处理和噪声注入模块 (Feature Processing and Noise Injection Module)
+# Feature Processing and Noise Injection Module
 # =============================================================================
 
 class FeatureProcessingModule:
     """
-    特征处理和噪声注入模块
-    负责特征矩阵的构建、标准化、噪声注入等处理
+    Feature processing and noise injection module.
+    
+    Responsible for feature matrix construction, standardization, noise injection, etc.
     """
 
     @staticmethod
     def build_feature_matrix(drug_list: List[str], id2vec: Dict[str, np.ndarray],
                            emb_dim: int, args: argparse.Namespace) -> torch.Tensor:
         """
-        构建药物特征矩阵
+        Build drug feature matrix.
 
         Args:
-            drug_list: 药物ID列表
-            id2vec: ID到嵌入向量的映射
-            emb_dim: 嵌入维度
-            args: 参数配置
+            drug_list: List of drug IDs.
+            id2vec: Dictionary mapping IDs to embedding vectors.
+            emb_dim: Embedding dimension.
+            args: Configuration parameters.
 
         Returns:
-            x: 标准化后的特征矩阵
+            Standardized feature matrix.
         """
         feats, miss = [], 0
         for d in drug_list:
@@ -214,17 +220,16 @@ class FeatureProcessingModule:
                 v = np.zeros(emb_dim, dtype=np.float32)
             feats.append(v)
 
-
         feats = np.asarray(feats, dtype=np.float32)
 
-        # 特征标准化
+        # Feature standardization
         feats = FeatureProcessingModule.normalize_features(feats)
 
-        # 添加高斯噪声
+        # Add Gaussian noise
         if getattr(args, 'noise_std', 0.0) > 0:
             feats = FeatureProcessingModule.add_gaussian_noise(feats, args.noise_std)
 
-        # 稀疏丢弃
+        # Sparse dropout
         if float(getattr(args, 'sparse_drop_rate', 0.0)) > 0:
             feats = FeatureProcessingModule.sparse_dropout(feats, args.sparse_drop_rate)
 
@@ -233,27 +238,27 @@ class FeatureProcessingModule:
     @staticmethod
     def normalize_features(feats: np.ndarray) -> np.ndarray:
         """
-        特征标准化
+        Standardize features.
 
         Args:
-            feats: 原始特征矩阵
+            feats: Original feature matrix.
 
         Returns:
-            标准化后的特征矩阵
+            Standardized feature matrix.
         """
         return (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-8)
 
     @staticmethod
     def add_gaussian_noise(feats: np.ndarray, noise_std: float) -> np.ndarray:
         """
-        添加高斯噪声
+        Add Gaussian noise.
 
         Args:
-            feats: 原始特征矩阵
-            noise_std: 噪声标准差
+            feats: Original feature matrix.
+            noise_std: Noise standard deviation.
 
         Returns:
-            添加噪声后的特征矩阵
+            Feature matrix with added noise.
         """
         noise = np.random.normal(0, float(noise_std), feats.shape).astype(np.float32)
         return feats + noise
@@ -261,45 +266,47 @@ class FeatureProcessingModule:
     @staticmethod
     def sparse_dropout(feats: np.ndarray, drop_rate: float) -> np.ndarray:
         """
-        稀疏丢弃
+        Apply sparse dropout.
 
         Args:
-            feats: 原始特征矩阵
-            drop_rate: 丢弃比例
+            feats: Original feature matrix.
+            drop_rate: Dropout rate.
 
         Returns:
-            稀疏化后的特征矩阵
+            Sparsified feature matrix.
         """
         mask = (np.random.rand(*feats.shape) > drop_rate).astype(np.float32)
         return feats * mask
 
 
 # =============================================================================
-# 数据分割和采样模块 (Data Splitting and Sampling Module)
+# Data Splitting and Sampling Module
 # =============================================================================
 
 class DataSplittingModule:
     """
-    数据分割和采样模块
-    负责数据集的划分、标签噪声注入、稀疏采样等
+    Data splitting and sampling module.
+    
+    Responsible for dataset splitting, label noise injection, sparse sampling, etc.
     """
 
     @staticmethod
     def split_data(triples: np.ndarray, val_ratio: float = 0.1,
                   test_ratio: float = 0.2, random_seed: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        数据集划分
+        Split dataset.
 
         Args:
-            triples: 三元组数据
-            val_ratio: 验证集比例
-            test_ratio: 测试集比例
-            random_seed: 随机种子
+            triples: Triple data.
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
+            random_seed: Random seed.
 
         Returns:
-            train_data: 训练集
-            val_data: 验证集
-            test_data: 测试集
+            Tuple containing:
+            - train_data: Training set
+            - val_data: Validation set
+            - test_data: Test set
         """
         rng = np.random.RandomState(random_seed)
         rng.shuffle(triples)
@@ -319,16 +326,19 @@ class DataSplittingModule:
     def _entity_holdout_split_indices(triples: np.ndarray, val_ratio: float = 0.1,
                                       test_ratio: float = 0.2, random_seed: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        基于药物实体的划分，确保测试集中的部分药物不出现在训练/验证集中。
+        Split dataset based on drug entities to ensure some drugs in test set do not appear in train/validation set.
 
         Args:
-            triples: 三元组数据 (h, t, r)
-            val_ratio: 验证集比例（作用于非测试部分）
-            test_ratio: 测试集比例（目标占总样本数的比例）
-            random_seed: 随机种子
+            triples (List[Tuple]): Triple data (h, t, r).
+            val_ratio (float): Validation set ratio (applied to non-test part).
+            test_ratio (float): Test set ratio (target proportion of total samples).
+            random_seed (int): Random seed.
 
         Returns:
-            train_idx, val_idx, test_idx: 每个 split 对应的样本索引
+            Tuple[List[int], List[int], List[int]]: 
+                - train_idx: Indices for training set
+                - val_idx: Indices for validation set
+                - test_idx: Indices for test set
         """
         n_total = len(triples)
         if n_total == 0:
@@ -337,7 +347,7 @@ class DataSplittingModule:
         rng = np.random.RandomState(random_seed)
         target_test = max(1, int(np.ceil(n_total * float(test_ratio))))
 
-        # 统计每个药物涉及的样本索引
+        # Count the sample indices associated with each drug.
         drug_to_indices: Dict[int, set] = defaultdict(set)
         for idx, (h, t, _) in enumerate(triples):
             drug_to_indices[int(h)].add(idx)
@@ -346,7 +356,7 @@ class DataSplittingModule:
         drug_ids = np.array(list(drug_to_indices.keys()))
         rng.shuffle(drug_ids)
 
-        # 逐个挑选药物直到覆盖到期望的测试样本数
+        # Select drugs one by one until the desired number of test samples is reached.
         test_indices: set = set()
         for d in drug_ids:
             test_indices.update(drug_to_indices[d])
@@ -355,7 +365,7 @@ class DataSplittingModule:
 
         test_idx = np.array(sorted(test_indices), dtype=np.int64)
 
-        # 剩余样本用于训练/验证，再按比例划分
+        # Remaining samples for training/validation, split by ratio
         remaining_mask = np.ones(n_total, dtype=bool)
         remaining_mask[test_idx] = False
         remaining_indices = np.nonzero(remaining_mask)[0]
@@ -372,7 +382,7 @@ class DataSplittingModule:
     def split_data_generalization(triples: np.ndarray, val_ratio: float = 0.1,
                                   test_ratio: float = 0.2, random_seed: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        基于药物实体划分的数据集，保证测试集中的部分药物未出现在训练/验证集中。
+        Based on a dataset categorized by drug entities, we ensure that some drugs in the test set do not appear in the training/validation sets.
         """
         train_idx, val_idx, test_idx = DataSplittingModule._entity_holdout_split_indices(
             triples, val_ratio, test_ratio, random_seed
@@ -382,7 +392,7 @@ class DataSplittingModule:
         val_data = triples[val_idx]
         test_data = triples[test_idx]
 
-        # 统计药物覆盖情况，便于确认无交集
+        # Count the drug coverage to confirm no overlap
         train_drugs = set(np.unique(train_data[:, :2].reshape(-1))) if len(train_data) > 0 else set()
         val_drugs = set(np.unique(val_data[:, :2].reshape(-1))) if len(val_data) > 0 else set()
         test_drugs = set(np.unique(test_data[:, :2].reshape(-1))) if len(test_data) > 0 else set()
@@ -398,19 +408,20 @@ class DataSplittingModule:
     def split_multilabel_data(triples: np.ndarray, labels: np.ndarray, val_ratio: float = 0.1,
                              test_ratio: float = 0.2, random_seed: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        多标签数据集划分
+        Split multi-label dataset.
 
         Args:
-            triples: 三元组数据
-            labels: 标签数据
-            val_ratio: 验证集比例
-            test_ratio: 测试集比例
-            random_seed: 随机种子
+            triples: Triple data.
+            labels: Label data.
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
+            random_seed: Random seed.
 
         Returns:
-            train_triples, train_labels: 训练集三元组和标签
-            val_triples, val_labels: 验证集三元组和标签
-            test_triples, test_labels: 测试集三元组和标签
+            Tuple containing:
+            - train_triples, train_labels: Training set triples and labels
+            - val_triples, val_labels: Validation set triples and labels
+            - test_triples, test_labels: Test set triples and labels
         """
         rng = np.random.RandomState(random_seed)
         idx = rng.permutation(len(triples))
@@ -431,7 +442,7 @@ class DataSplittingModule:
     def split_multilabel_data_generalization(triples: np.ndarray, labels: np.ndarray, val_ratio: float = 0.1,
                                             test_ratio: float = 0.2, random_seed: int = 1) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        多标签数据集划分（药物实体划分），保证测试集药物未出现在训练/验证集中。
+        Split multi-label dataset (drug entity split) to ensure some drugs in the test set do not appear in the training/validation sets.
         """
         train_idx, val_idx, test_idx = DataSplittingModule._entity_holdout_split_indices(
             triples, val_ratio, test_ratio, random_seed
@@ -455,16 +466,16 @@ class DataSplittingModule:
     def add_label_noise_multiclass(train_data: np.ndarray, num_classes: int,
                                   noise_ratio: float, random_seed: int = 1) -> np.ndarray:
         """
-        多分类标签噪声注入
+        Inject label noise for multi-class classification.
 
         Args:
-            train_data: 训练数据
-            num_classes: 类别数量
-            noise_ratio: 噪声比例
-            random_seed: 随机种子
+            train_data: Training data.
+            num_classes: Number of classes.
+            noise_ratio: Noise ratio.
+            random_seed: Random seed.
 
         Returns:
-            添加噪声后的训练数据
+            Training data with added label noise.
         """
         if noise_ratio <= 0:
             return train_data
@@ -486,16 +497,16 @@ class DataSplittingModule:
     def add_label_noise_multilabel(labels: np.ndarray, noise_ratio: float,
                                   flip_per_label: int = 50, random_seed: int = 1) -> np.ndarray:
         """
-        多标签标签噪声注入
+        Inject label noise for multi-label classification.
 
         Args:
-            labels: 标签矩阵
-            noise_ratio: 噪声比例
-            flip_per_label: 每个样本翻转的标签位数
-            random_seed: 随机种子
+            labels: Label matrix.
+            noise_ratio: Noise ratio.
+            flip_per_label: Number of flipped labels per sample.
+            random_seed: Random seed.
 
         Returns:
-            添加噪声后的标签矩阵
+            Label matrix with added noise.
         """
         if noise_ratio <= 0:
             return labels
@@ -517,16 +528,16 @@ class DataSplittingModule:
     def sparse_sampling_multiclass(train_data: np.ndarray, num_classes: int,
                                   sparse_sample_rate: float, random_seed: int = 1) -> np.ndarray:
         """
-        多分类稀疏采样
+        Perform sparse sampling for multi-class classification.
 
         Args:
-            train_data: 训练数据
-            num_classes: 类别数量
-            sparse_sample_rate: 采样率
-            random_seed: 随机种子
+            train_data: Training data.
+            num_classes: Number of classes.
+            sparse_sample_rate: Sampling rate.
+            random_seed: Random seed.
 
         Returns:
-            采样后的训练数据
+            Sampled training data.
         """
         if sparse_sample_rate <= 0:
             return train_data
@@ -538,19 +549,19 @@ class DataSplittingModule:
         labels = train_data[:, 2]
         n_train = len(train_data)
 
-        # 计算每个标签的频率
+        # Calculate frequency of each label
         label_counts = np.bincount(labels.astype(int), minlength=num_classes)
         print(f"采样前各标签频率: {label_counts}")
 
-        # 计算每个标签需要保留的样本数
+        # Calculate number of samples to keep for each label
         keep_ratios = 1.0 - sparse_sample_rate
         keep_counts = (label_counts * keep_ratios).astype(int)
         keep_counts = np.maximum(keep_counts, 1)
 
-        # 初始化保留样本的索引列表
+        # Initialize list of indices to keep
         keep_indices = []
 
-        # 对每个标签进行采样
+        # Sample for each label
         for label in range(num_classes):
             label_indices = np.where(labels == label)[0]
             n_keep = keep_counts[label]
@@ -568,29 +579,32 @@ class DataSplittingModule:
 
 
 # =============================================================================
-# 图构建模块 (Graph Construction Module)
+# Graph Construction Module
 # =============================================================================
 
 class GraphConstructionModule:
     """
-    图构建模块
-    负责根据训练数据构建图结构，支持多关系和单关系图
+    Graph construction module.
+    
+    Responsible for building graph structures from training data, 
+    supporting multi-relation and single-relation graphs.
     """
 
     @staticmethod
     def build_multigraph(train_data: np.ndarray, network_ratio: float = 1.0,
                         random_seed: int = 1) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        构建多关系图
+        Build multi-relation graph.
 
         Args:
-            train_data: 训练数据
-            network_ratio: 边使用比例
-            random_seed: 随机种子
+            train_data: Training data.
+            network_ratio: Edge usage ratio.
+            random_seed: Random seed.
 
         Returns:
-            edge_index: 边索引张量
-            edge_type: 边类型张量
+            Tuple containing:
+            - edge_index: Edge index tensor
+            - edge_type: Edge type tensor
         """
         use_ratio = float(network_ratio)
         if use_ratio <= 0 or use_ratio > 1:
@@ -620,16 +634,17 @@ class GraphConstructionModule:
     def build_single_relation_graph(train_triples: np.ndarray, network_ratio: float = 1.0,
                                    random_seed: int = 1) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        构建单关系图
+        Build single-relation graph.
 
         Args:
-            train_triples: 训练三元组
-            network_ratio: 边使用比例
-            random_seed: 随机种子
+            train_triples: Training triples.
+            network_ratio: Edge usage ratio.
+            random_seed: Random seed.
 
         Returns:
-            edge_index: 边索引张量
-            edge_type: 边类型张量（全为0）
+            Tuple containing:
+            - edge_index: Edge index tensor
+            - edge_type: Edge type tensor (all zeros)
         """
         use_ratio = float(network_ratio)
         if use_ratio <= 0 or use_ratio > 1:
@@ -657,25 +672,26 @@ class GraphConstructionModule:
 
 
 # =============================================================================
-# DataLoader创建模块 (DataLoader Creation Module)
+# DataLoader Creation Module
 # =============================================================================
 
 class DataLoaderCreationModule:
     """
-    DataLoader创建模块
-    负责创建和配置DataLoader
+    DataLoader creation module.
+    
+    Responsible for creating and configuring DataLoaders.
     """
 
     @staticmethod
     def create_dataloader_config(args: argparse.Namespace) -> Dict:
         """
-        创建DataLoader配置
+        Create DataLoader configuration.
 
         Args:
-            args: 参数配置
+            args: Configuration parameters.
 
         Returns:
-            DataLoader配置字典
+            DataLoader configuration dictionary.
         """
         params = {
             'batch_size': args.batch,
@@ -695,18 +711,19 @@ class DataLoaderCreationModule:
     def create_multiclass_dataloaders(train_data: np.ndarray, val_data: np.ndarray,
                                       test_data: np.ndarray, args: argparse.Namespace) -> Tuple[DataLoader, DataLoader, DataLoader]:
         """
-        创建多分类DataLoader
+        Create multi-class DataLoaders.
 
         Args:
-            train_data: 训练数据
-            val_data: 验证数据
-            test_data: 测试数据
-            args: 参数配置
+            train_data: Training data.
+            val_data: Validation data.
+            test_data: Test data.
+            args: Configuration parameters.
 
         Returns:
-            train_loader: 训练DataLoader
-            val_loader: 验证DataLoader
-            test_loader: 测试DataLoader
+            Tuple containing:
+            - train_loader: Training DataLoader
+            - val_loader: Validation DataLoader
+            - test_loader: Test DataLoader
         """
         params = DataLoaderCreationModule.create_dataloader_config(args)
 
@@ -722,18 +739,22 @@ class DataLoaderCreationModule:
                                      test_triples: np.ndarray, test_labels: np.ndarray,
                                      args: argparse.Namespace) -> Tuple[DataLoader, DataLoader, DataLoader]:
         """
-        创建多标签DataLoader
+        Create multi-label DataLoaders.
 
         Args:
-            train_triples, train_labels: 训练三元组和标签
-            val_triples, val_labels: 验证三元组和标签
-            test_triples, test_labels: 测试三元组和标签
-            args: 参数配置
+            train_triples: Training triples.
+            train_labels: Training labels.
+            val_triples: Validation triples.
+            val_labels: Validation labels.
+            test_triples: Test triples.
+            test_labels: Test labels.
+            args: Configuration parameters.
 
         Returns:
-            train_loader: 训练DataLoader
-            val_loader: 验证DataLoader
-            test_loader: 测试DataLoader
+            Tuple containing:
+            - train_loader: Training DataLoader
+            - val_loader: Validation DataLoader
+            - test_loader: Test DataLoader
         """
         params = DataLoaderCreationModule.create_dataloader_config(args)
 
@@ -745,11 +766,11 @@ class DataLoaderCreationModule:
 
 
 # =============================================================================
-# 基础数据集类 (Base Dataset Classes)
+# Base Dataset Classes
 # =============================================================================
 
 class BaseMultiDataset(Dataset):
-    """多分类数据集类"""
+    """Multi-class dataset class."""
     def __init__(self, triple: np.ndarray):
         self.entity1 = triple[:, 0]
         self.entity2 = triple[:, 1]
@@ -763,7 +784,7 @@ class BaseMultiDataset(Dataset):
 
 
 class BaseMultiLabelDataset(Dataset):
-    """多标签数据集类"""
+    """Multi-label dataset class."""
     def __init__(self, triple: np.ndarray, labels: np.ndarray = None):
         self.entity1 = triple[:, 0]
         self.entity2 = triple[:, 1]
@@ -780,13 +801,15 @@ class BaseMultiLabelDataset(Dataset):
 
 
 # =============================================================================
-# 主要BaseDataset类 (Main BaseDataset Class)
+# Main BaseDataset Class
 # =============================================================================
 
 class BaseDataset:
     """
-    基础数据集类，整合所有功能模块
-    提供统一的数据处理接口，支持多分类和多标签任务
+    Base dataset class integrating all functional modules.
+    
+    Provides a unified data processing interface supporting 
+    multi-class and multi-label tasks.
     """
 
     def __init__(self, args: argparse.Namespace):
@@ -796,7 +819,7 @@ class BaseDataset:
         self.val_loader = None
         self.test_loader = None
 
-        # 初始化各个功能模块
+        # Initialize functional modules
         self.data_loader = DataLoadingModule()
         self.feature_processor = FeatureProcessingModule()
         self.data_splitter = DataSplittingModule()
@@ -805,11 +828,11 @@ class BaseDataset:
 
     def load_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
         """
-        加载数据的主入口
+        Main entry point for loading data.
 
         Args:
-            val_ratio: 验证集比例
-            test_ratio: 测试集比例
+            val_ratio: Validation set ratio.
+            test_ratio: Test set ratio.
         """
         if self.args.matrix in ['multilabel', 'twosides']:
             self._load_multilabel_data(val_ratio, test_ratio)
@@ -817,24 +840,25 @@ class BaseDataset:
             self._load_multiclass_data(val_ratio, test_ratio)
 
     def _load_multiclass_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
-        """加载多分类数据"""
+        """Load multi-class data."""
         print("=== 开始加载多分类数据 ===")
 
-        # 1. 读取节点嵌入
+
+        # 1. Read node embeddings
         id2vec, emb_dim = self.data_loader.read_id_embedding_pt(self.args.embedding_path)
         print(f"嵌入维数: {emb_dim}")
 
-        # 2. 读取配对与重映射
+        # 2. Read pairs and remap
         pairs_df, num_relations = self.data_loader.read_multi_pairs_and_remap(self.args.matrix_path)
         print(f"DDI 类型数量: {num_relations}")
         self.args.num_classes = int(num_relations)
 
-        # 3. 构建特征矩阵
+        # 3. Build feature matrix
         drug_list = sorted(set(pairs_df['id1']).union(set(pairs_df['id2'])))
         x = self.feature_processor.build_feature_matrix(drug_list, id2vec, emb_dim, self.args)
         self.args.dimensions = int(x.shape[1])
 
-        # 4. 构建三元组
+        # 4. Build triples
         drug_id_to_index = {d: i for i, d in enumerate(drug_list)}
         triples = np.asarray(
             [(drug_id_to_index[h], drug_id_to_index[t], int(r))
@@ -842,7 +866,7 @@ class BaseDataset:
             dtype=np.int64
         )
 
-        # 5. 数据划分
+        # 5. data splitting
         if getattr(self.args, 'general', True):
             train_data, val_data, test_data = self.data_splitter.split_data_generalization(
                 triples, val_ratio, test_ratio, getattr(self.args, 'seed', 1)
@@ -852,24 +876,24 @@ class BaseDataset:
                 triples, val_ratio, test_ratio, getattr(self.args, 'seed', 1)
             )
 
-        # 6. 标签噪声处理
+        # 6. Label noise processing
         if getattr(self.args, 'noise_ratio', 0.0) > 0:
             train_data = self.data_splitter.add_label_noise_multiclass(
                 train_data, self.args.num_classes, self.args.noise_ratio
             )
 
-        # 7. 稀疏采样
+        # 7. Sparse sampling
         if getattr(self.args, 'sparse_sample_rate', 0.0) > 0:
             train_data = self.data_splitter.sparse_sampling_multiclass(
                 train_data, self.args.num_classes, self.args.sparse_sample_rate
             )
 
-        # 8. 创建DataLoader
+        # 8. Create DataLoader
         self.train_loader, self.val_loader, self.test_loader = self.dataloader_creator.create_multiclass_dataloaders(
             train_data, val_data, test_data, self.args
         )
 
-        # 9. 构建图
+        # 9. Build graph
         edge_index, edge_type = self.graph_builder.build_multigraph(
             train_data, getattr(self.args, 'network_ratio', 1.0)
         )
@@ -878,24 +902,25 @@ class BaseDataset:
         print("=== 多分类数据加载完成 ===")
 
     def _load_multilabel_data(self, val_ratio: float = 0.1, test_ratio: float = 0.2):
-        """加载多标签数据"""
+        """Load multi-label data."""
         print("=== 开始加载多标签数据 ===")
 
-        # 1. 读取节点嵌入
+
+        # 1. Read node embeddings
         id2vec, emb_dim = self.data_loader.read_id_embedding_pt(self.args.embedding_path)
         print(f"嵌入维数: {emb_dim}")
 
-        # 2. 读取配对与重映射
+        # 2. Read pairs and remap
         pairs_df, num_relations = self.data_loader.read_multilabel_pairs_and_remap(self.args.matrix_path)
         print(f"DDI 类型数量: {num_relations}")
         self.args.num_classes = int(num_relations)
 
-        # 3. 构建特征矩阵
+        # 3. Build feature matrix
         drug_list = sorted(set(pairs_df['id1']).union(set(pairs_df['id2'])))
         x = self.feature_processor.build_feature_matrix(drug_list, id2vec, emb_dim, self.args)
         self.args.dimensions = int(x.shape[1])
 
-        # 4. 构建三元组和标签
+        # 4. Build triples and labels
         drug_id_to_index = {d: i for i, d in enumerate(drug_list)}
         triples = np.asarray(
             [(drug_id_to_index[h], drug_id_to_index[t], 0)
@@ -904,7 +929,7 @@ class BaseDataset:
         )
         labels = np.stack(pairs_df['ddi'].values).astype(np.float32)
 
-        # 5. 数据划分
+        # 5. data splitting
         if getattr(self.args, 'general', True):
             train_triples, train_labels, val_triples, val_labels, test_triples, test_labels = self.data_splitter.split_multilabel_data_generalization(
                 triples, labels, val_ratio, test_ratio, getattr(self.args, 'seed', 1)
@@ -914,18 +939,18 @@ class BaseDataset:
                 triples, labels, val_ratio, test_ratio, getattr(self.args, 'seed', 1)
             )
 
-        # 6. 标签噪声处理
+        # 6. Label noise processing
         if getattr(self.args, 'noise_ratio', 0.0) > 0:
             train_labels = self.data_splitter.add_label_noise_multilabel(
                 train_labels, self.args.noise_ratio, getattr(self.args, 'flip_per_label', 50)
             )
 
-        # 7. 创建DataLoader
+        # 7. Create DataLoader
         self.train_loader, self.val_loader, self.test_loader = self.dataloader_creator.create_multilabel_dataloaders(
             train_triples, train_labels, val_triples, val_labels, test_triples, test_labels, self.args
         )
 
-        # 8. 构建单关系图
+        # 8. Build single-relation graph
         edge_index, edge_type = self.graph_builder.build_single_relation_graph(
             train_triples, getattr(self.args, 'network_ratio', 1.0)
         )
@@ -934,7 +959,7 @@ class BaseDataset:
         print("=== 多标签数据加载完成 ===")
 
     def get_data_stats(self) -> Dict:
-        """获取数据集统计信息"""
+        """Get dataset statistics."""
         stats = {
             'num_nodes': self.data_o.x.shape[0] if self.data_o is not None else 0,
             'num_edges': self.data_o.edge_index.shape[1] if self.data_o is not None else 0,
@@ -947,23 +972,24 @@ class BaseDataset:
         return stats
 
     # -------------------------------------------------------------------------
-    # TIGER 复用：返回原始ID对与标签的划分，用于直接构造 x, y
+    # TIGER reuse: Returns the original ID pairs and label assignments, used to directly construct x and y.
     # -------------------------------------------------------------------------
     def build_pairs_labels_splits(self, val_ratio: float = 0.1, test_ratio: float = 0.2,
                                   random_seed: Optional[int] = None,
                                   return_original_ids: bool = True) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
         """
-        基于当前 args.matrix/matrix_path，读取配对数据，进行与 BaseDataset 相同风格的随机划分，
-        返回 train/val/test 三个 split 的 (pairs, labels)。
+        Load paired data from the given args.matrix or matrix_path, and perform a random split in the same style as BaseDataset.
+        Return (pairs, labels) for train/val/test splits.
 
-        - 对于多分类任务：labels 为 shape [N] 的 int64
-        - 对于多标签任务：labels 为 shape [N, C] 的 float32
+        - For multi-class tasks: labels are int64 of shape [N]
+        - For multi-label tasks: labels are float32 of shape [N, C]
 
         Args:
-            val_ratio: 验证集比例
-            test_ratio: 测试集比例
-            random_seed: 随机种子（默认从 args.seed 或 1 获取）
-            return_original_ids: 是否返回原始 ID（字符串）对，若为 False 则返回索引对
+            val_ratio (float): Validation set ratio.
+            test_ratio (float): Test set ratio.
+            random_seed (int, optional): Random seed (default from args.seed or 1).
+            return_original_ids (bool, optional): Whether to return original ID (string) pairs. 
+                If False, returns index pairs.
 
         Returns:
             dict: {
@@ -974,7 +1000,7 @@ class BaseDataset:
         """
         seed = int(getattr(self.args, 'seed', 1)) if random_seed is None else int(random_seed)
 
-        # 读取配对与标签（根据任务类型选择解析方式）
+        # Read pairings and labels (select parsing method based on task type)
         if self.args.matrix in ['multilabel', 'twosides']:
             pairs_df, num_relations = self.data_loader.read_multilabel_pairs_and_remap(self.args.matrix_path)
             labels_all = np.stack(pairs_df['ddi'].values).astype(np.float32)
@@ -982,19 +1008,19 @@ class BaseDataset:
             pairs_df, num_relations = self.data_loader.read_multi_pairs_and_remap(self.args.matrix_path)
             labels_all = pairs_df['ddi'].to_numpy(dtype=np.int64)
 
-        # 原始 ID 对（字符串）
+        # Original ID pairs (strings)
         pairs_orig = pairs_df[['id1', 'id2']].to_numpy(dtype=object)
 
-        # 若需要返回索引对，则基于 drug_list 重映射
+        # If not returning original IDs, remap based on drug_list
         if not return_original_ids:
             drug_list = sorted(set(pairs_df['id1']).union(set(pairs_df['id2'])))
             drug_id_to_index = {d: i for i, d in enumerate(drug_list)}
             pairs_idx = np.asarray([(drug_id_to_index[h], drug_id_to_index[t])
                                     for h, t in pairs_orig], dtype=np.int64)
         else:
-            pairs_idx = None  # 未使用
+            pairs_idx = None  # Not used
 
-        # 生成打乱索引并切分
+        # Generate shuffled indices and split
         rng = np.random.RandomState(seed)
         n_total = len(pairs_df)
         perm = rng.permutation(n_total)
@@ -1004,7 +1030,7 @@ class BaseDataset:
         val_idx = perm[n_test:n_test + n_val]
         train_idx = perm[n_test + n_val:]
 
-        # 组装输出
+        # Assemble output
         if return_original_ids:
             train_pairs = pairs_orig[train_idx]
             val_pairs = pairs_orig[val_idx]

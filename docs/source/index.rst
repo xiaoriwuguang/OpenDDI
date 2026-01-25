@@ -1,7 +1,78 @@
 OpenDDI Documentation
 =====================
 
-Welcome to the OpenDDI Documentation!
+Welcome to the **OpenDDI** documentation! OpenDDI is an open-source unified benchmarking framework designed for **Drug-Drug Interaction (DDI)** prediction. Published at ICML 2026, OpenDDI provides a comprehensive platform for evaluating and developing DDI prediction methodologies with standardized datasets, state-of-the-art models, and versatile evaluation tools.
+
+Introduction
+------------
+
+**OpenDDI** is a unified benchmarking framework that integrates 20 state-of-the-art DDI prediction algorithms and supports 9 standardized datasets. The framework addresses the unique challenges of multimodal drug interaction data by providing comprehensive evaluation from five dimensions: data quality, effectiveness, generalization, efficiency, and robustness.
+
+**Dataset Sources:**
+
+OpenDDI integrates data from 12 authoritative biomedical data sources:
+
+- DrugBank (Wishart et al., 2018)
+- ChEMBL (Mendez et al., 2018)
+- BindingDB (Liu et al., 2007)
+- KEGG (Kanehisa et al., 2016)
+- BIOSNAP DDI dataset
+- Davis dataset
+- DRKG (Drug Repurposing Knowledge Graph)
+- MEDLINE
+- OFFSIDES
+- PharmGKB (Hewett et al., 2002)
+- PubChem (Kim et al., 2016)
+- TWOSIDES (Tatonetti et al., 2012)
+
+Key Features
+~~~~~~~~~~~~
+
+- **Dataset Integration & Extension**: Unifies 6 existing datasets and introduces 3 new large-scale LLM-enhanced datasets, totaling 5.3 million DDIs across 34,000 drugs
+- **Multimodal Drug Representation**: Integrates 5 biomedical modalities (SMILES, path/drug-mechanism network, 3D conformations, amino acid sequences, text descriptions)
+- **Algorithm Benchmark**: Integrates 20 state-of-the-art algorithms supporting 3 downstream tasks (binary classification, multi-class classification, multi-label classification)
+- **Standardized Evaluation**: Comprehensive evaluation from 5 dimensions (data quality, effectiveness, generalization, efficiency, robustness)
+
+Installation
+------------
+
+Step 1: Clone the Repository
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    git clone <REPO-URL>
+    cd OpenDDI
+
+Step 2: Install Dependencies
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+General Dependencies
+^^^^^^^^^^^^^^^^^^^^
+
+You can install the general dependencies:
+
+.. code-block:: bash
+
+    conda env create -f openddi.yml
+    pip install torch-scatter==2.0.7 torch-sparse==0.6.9 -f https://data.pyg.org/whl/torch-1.7.0+cu110.html
+
+Step 3: Run the Main Script
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After installing the dependencies, you can run the main script using the following command:
+
+.. code-block:: bash
+
+    python openddi/main.py --model <model_name> --matrix <matrix_name> --modality <modality_name> --epochs <epochs> --batch <batch>
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Tutorial
+
+   Tutorial/quick_start
+   Tutorial/example
+   Tutorial/parameters
 
 .. toctree::
    :maxdepth: 2
@@ -10,6 +81,11 @@ Welcome to the OpenDDI Documentation!
    API/dataset
    API/models
    API/trainer
+   API/utils
+   API/evaluate
+   API/pipeline
+   API/main
+   API/parms_setting
 
 References
 ==========

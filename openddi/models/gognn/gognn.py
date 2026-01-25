@@ -8,6 +8,23 @@ from torch_geometric.utils import to_undirected
 
 
 class GoGNN(torch.nn.Module):
+    """
+    GoGNN model for DDI prediction using graph neural networks.
+    
+    Features:
+    - Molecular graph processing with GCN layers and SAGPooling
+    - DDI graph processing for drug-drug interaction prediction
+    - Supports both multiclass and multilabel classification
+    
+    Args:
+        args: Configuration arguments.
+        num_features: Input feature dimension.
+        nhid: Hidden dimension for molecular GNN.
+        ddi_nhid: Hidden dimension for DDI GNN.
+        pooling_ratio: Ratio for SAGPooling layers.
+        dropout_ratio: Dropout rate.
+        num_rel: Number of relation types for classification.
+    """
     def __init__(self, args, num_features, nhid, ddi_nhid, pooling_ratio, dropout_ratio, num_rel):
         super(GoGNN, self).__init__()
         self.args = args
@@ -37,6 +54,17 @@ class GoGNN(torch.nn.Module):
 
 
     def forward(self, data):
+        """
+        Forward pass of GoGNN model.
+        
+        Args:
+            data: Tuple containing (data_list, ddi_edge_index, ddi_edge_attr or None, ...)
+                - data_list: List of molecular graph Data objects
+                - ddi_edge_index: Edge indices for DDI graph
+                
+        Returns:
+            torch.Tensor: Logits for DDI edge classification.
+        """
         # data: (data_list, ddi_edge_index, ddi_edge_attr or None, [optional placeholders...])
         data_list, ddi_edge_index, *_ = data
         
@@ -90,10 +118,18 @@ class GoGNN(torch.nn.Module):
 
 
     def loss(self, logits, labels):
-        """Supervised loss for DDI edge classification.
-
-        If args.matrix in ['multilabel','twosides'] -> BCEWithLogitsLoss (labels float multi-hot)
-        else -> CrossEntropyLoss (labels long class indices)
+        """
+        Compute supervised loss for DDI edge classification.
+        
+        Args:
+            logits: Model predictions.
+            labels: Ground truth labels.
+            
+        Returns:
+            torch.Tensor: Loss value.
+            
+        Note:
+            Uses BCEWithLogitsLoss for multilabel tasks, CrossEntropyLoss for multiclass.
         """
         task = getattr(self.args, 'matrix', 'multiclass')
         if task in ['multilabel', 'twosides']:

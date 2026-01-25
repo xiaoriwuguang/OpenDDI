@@ -42,7 +42,11 @@ autodoc_default_options = {
 }
 
 # 自动为每个模块生成文档
-autodoc_mock_imports = []
+autodoc_mock_imports = [
+    "torch",
+    "torch_geometric",
+    "torch_geometric.nn",
+]
 
 # -- Napoleon 配置 (用于文档字符串解析) ------------------------------------
 napoleon_google_docstring = True

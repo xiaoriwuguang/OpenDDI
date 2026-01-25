@@ -7,6 +7,21 @@ gamma = 12.0
 
 
 class MUFFIN(nn.Module):
+    """
+    MUFFIN model for multi-modal drug-drug interaction prediction.
+    
+    Features:
+    - Dual embedding fusion (entity and structure embeddings)
+    - Cross-modal attention mechanisms
+    - CNN-based feature extraction
+    - Supports both multiclass and multilabel classification
+    
+    Args:
+        args: Configuration arguments.
+        entity_dim: Dimension of entity embeddings.
+        structure_dim: Dimension of structure embeddings.
+        num_rel: Number of relation types for classification.
+    """
 
     def __init__(self, args, entity_dim, structure_dim, num_rel):
 
@@ -17,7 +32,6 @@ class MUFFIN(nn.Module):
         self.entity_dim = entity_dim
         self.structure_dim = structure_dim
         self.fusion_type = 'init_double'
-
 
         self.druglayer_structure = nn.Linear(self.structure_dim, self.entity_dim)
         self.druglayer_KG = nn.Linear(self.entity_dim, self.entity_dim)
@@ -54,6 +68,15 @@ class MUFFIN(nn.Module):
         self.layer3 = nn.Sequential(nn.Linear(2048, num_rel))
 
     def generate_fusion_feature(self, batch_data):
+        """
+        Generate fused features from entity and structure embeddings.
+        
+        Args:
+            batch_data: Tuple containing (entity_embed_pre, structure_embed_pre, ...)
+            
+        Returns:
+            torch.Tensor: Fused feature representation.
+        """
         # we focus on approved drug
         entity_embed_pre = batch_data[0]
         structure_embed_pre = batch_data[1]
@@ -109,7 +132,15 @@ class MUFFIN(nn.Module):
             return out_concat
 
     def forward(self, batch_data):
-
+        """
+        Forward pass of MUFFIN model.
+        
+        Args:
+            batch_data: Tuple containing (entity_embed, structure_embed, ddi_edge_index, labels)
+            
+        Returns:
+            torch.Tensor: Logits for DDI prediction.
+        """
         all_embed = self.generate_fusion_feature(batch_data)
         ddi_edge_index = batch_data[2]
         source, target = ddi_edge_index
@@ -124,10 +155,15 @@ class MUFFIN(nn.Module):
         return x
     
     def loss(self, logits, labels):
-        """Supervised loss for DDI edge classification.
-
-        If args.matrix in ['multilabel','twosides'] -> BCEWithLogitsLoss (labels float multi-hot)
-        else -> CrossEntropyLoss (labels long class indices)
+        """
+        Compute supervised loss for DDI edge classification.
+        
+        Args:
+            logits: Model predictions.
+            labels: Ground truth labels.
+            
+        Returns:
+            torch.Tensor: Loss value.
         """
         task = getattr(self.args, 'matrix', 'multiclass')
         if task in ['multilabel', 'twosides']:
@@ -135,4 +171,3 @@ class MUFFIN(nn.Module):
             return nn.BCEWithLogitsLoss()(logits, labels)
         else:
             return nn.CrossEntropyLoss()(logits, labels.long())
-

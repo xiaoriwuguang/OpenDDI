@@ -22,7 +22,7 @@ CODE_DIR = os.path.dirname(os.path.abspath(__file__))
 def settings():
     parser = argparse.ArgumentParser()
 
-    # ---------------- 基础训练参数 ----------------
+    # ---------------- Basic Training Parameters ----------------
     parser.add_argument('--no-cuda', action='store_true', default=False, help='Force use CPU')
     parser.add_argument('--device', type=str, choices=['auto', 'cuda', 'cpu'],
                         default='cuda', help="Device: 'auto' -> cuda if available else cpu")
@@ -33,15 +33,15 @@ def settings():
     parser.add_argument('--batch', type=int, default=32768)
     parser.add_argument('--epochs', type=int, default=150)
 
-    # 输出文件目录
+    # Output directory
     default_fig_dir = os.path.join(CODE_DIR, '..', 'results')
     os.makedirs(default_fig_dir, exist_ok=True)
 
-    # 模态切分（可选）
+    # Modal splits (optional)
     parser.add_argument('--modal_splits', type=str, default=None,
                         help='各模态维度, 逗号分隔, 之和需等于 args.dimensions, 例如 "1024,768,256,128"')
 
-    # ---------------- 模型/任务选择 ----------------
+    # ---------------- Model/Task Selection ----------------
     parser.add_argument('--model', type=str,
                         choices=['MRCGNN','GOGNN','ZeroDDI','DDIMDL','TIGER','ConvLSTM','MVA',
                                  'MUFFIN','DeepDDI','DDKG','SumGNN','LaGAT','KGNN','PHGLDDI',
@@ -54,7 +54,7 @@ def settings():
     parser.add_argument('--hidden1', type=int, default=512)
     parser.add_argument('--hidden2', type=int, default=256)
 
-    # ---------------- 数据集/模态 ----------------
+    # ---------------- Dataset/Modality ----------------
     parser.add_argument('--features', type=int, nargs='+', default=[300, 320, 512, 320, 768])
     parser.add_argument('--dimensions', type=int, default=512)
     parser.add_argument('--num_classes', type=int, default=-1)
@@ -73,13 +73,13 @@ def settings():
     parser.add_argument('--origin', type=bool, default=False, help='是否使用原始模型')
     parser.add_argument('--general', type=bool, default=False, help='是否进行泛化实验')
 
-    # 噪声
+    # noise
     parser.add_argument('--noise_std', type=float, default=0.0, help='输入特征高斯噪声 σ')
     parser.add_argument('--noise_ratio', type=float, default=0.0, help='训练集标签加噪比例')
 
-    # 稀疏性（可选）
-    parser.add_argument('--sparse_drop_rate', type=float, default=0.0)      # 特征随机置零比例
-    parser.add_argument('--sparse_sample_rate', type=float, default=0.0)    # 训练集标签采样比例
+    # Sparsity (optional)
+    parser.add_argument('--sparse_drop_rate', type=float, default=0.0)      # Feature random zeroing ratio
+    parser.add_argument('--sparse_sample_rate', type=float, default=0.0)    # Training set label sampling ratio
 
     # Zero-shot
     parser.add_argument('--event_sem_path', type=str, default=None, help='K×d_e 的 .npy/.csv；缺省为 one-hot')
@@ -87,29 +87,28 @@ def settings():
     parser.add_argument('--zs_ratio', type=float, default=0.3)
     parser.add_argument('--zs_seed', type=int, default=1)
 
-
-    # 对齐损失
+    # Alignment loss
     parser.add_argument('--lambda_align', type=float, default=1.0)
     parser.add_argument('--lambda_u_pair', type=float, default=0.1)
     parser.add_argument('--lambda_u_event', type=float, default=0.1)
     parser.add_argument('--uniform_t', type=float, default=2.0)
 
-    # ---------- 先解析参数 ----------
+    # ---------- Parse arguments first ----------
     args = parser.parse_args()
 
-    # ---------- 设备选择规范化 ----------
+    # ---------- Device selection normalization ----------
     if args.no_cuda:
         args.device = 'cpu'
     elif args.device == 'auto':
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # 若用户强制 --device=cuda 但系统不可用，则降级
+    # If user forces --device=cuda but system unavailable, downgrade
     if args.device == 'cuda' and not torch.cuda.is_available():
         print("[WARN] --device=cuda 但 PyTorch 未检测到 CUDA，退回 CPU。")
         args.device = 'cpu'
     args.cuda = (args.device == 'cuda')
 
-    # ---------- 路径/映射 ----------
-    # 输出文件（为每个模型单独的子目录）
+    # ---------- Paths/Mappings ----------
+    # Output file (separate subdirectory for each model)
     model_fig_dir = os.path.join(default_fig_dir, args.model)
     os.makedirs(model_fig_dir, exist_ok=True)
     args.out_file = os.path.join(
@@ -144,7 +143,7 @@ def settings():
     args.oriKG_path = os.path.join(CODE_DIR,'..','datasets','data','kgnet.tsv')
     args.code_dir = CODE_DIR
 
-    # 小提示：打印一下设备/可见卡，便于你检查
+    # Small hint: print device/visible GPUs for checking
     if args.cuda:
         print(f"[INFO] device=cuda | CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','ALL')} "
               f"| cuda_count={torch.cuda.device_count()}")

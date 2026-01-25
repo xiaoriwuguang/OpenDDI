@@ -6,6 +6,22 @@ import copy
 from torch.nn.parameter import Parameter
 
 class MVA(nn.Module):
+    """
+    Multi-View Attention model for DDI prediction.
+    
+    Features:
+    - Graph convolutional networks for molecular structure
+    - Transformer-based sequence encoders for SMILES
+    - Attention-based feature fusion
+    - Supports both multiclass and multilabel classification
+    
+    Args:
+        args: Configuration arguments.
+        gcn_in_features: Input dimension for GCN.
+        gcn_out_features: Output dimension for GCN.
+        num_rel: Number of relation types.
+        bias: Whether to use bias in GCN (default=True).
+    """
     def __init__(self, args, gcn_in_features, gcn_out_features, num_rel, bias=True):
         super(MVA, self).__init__()
         # gcn Parameters
@@ -89,37 +105,70 @@ class MVA(nn.Module):
         self.output_proj = nn.Linear(256 * 2, 256, bias=False)
 
     def aggregate_message_1(self, nodes, node_neighbours, edges, mask):
-
+        """
+        Aggregate messages for first view (to be implemented).
+        """
         raise NotImplementedError
     def aggregate_message_2(self, nodes, node_neighbours, edges, mask):
-
+        """
+        Aggregate messages for second view (to be implemented).
+        """
         raise NotImplementedError
 
     # inputs are "batches" of shape (maximum number of nodes in batch, number of features)
     def update_1(self, nodes, messages):
+        """
+        Update node representations for first view (to be implemented).
+        """
         raise NotImplementedError
     def update_2(self, nodes, messages):
+        """
+        Update node representations for second view (to be implemented).
+        """
         raise NotImplementedError
 
     # inputs are "batches" of same shape as the nodes passed to update
     # node_mask is same shape as inputs and is 1 if elements corresponding exists, otherwise 0
     def readout_1(self, hidden_nodes, input_nodes, node_mask):
+        """
+        Readout function for first view (to be implemented).
+        """
         raise NotImplementedError
     def readout_2(self, hidden_nodes, input_nodes, node_mask):
+        """
+        Readout function for second view (to be implemented).
+        """
         raise NotImplementedError
     def readout(self,input_nodes, node_mask):
+        """
+        General readout function (to be implemented).
+        """
         raise NotImplementedError
     def final_layer(self,out):
-
+        """
+        Final layer processing (to be implemented).
+        """
         raise NotImplementedError
 
     def reset_parameters(self):
+        """
+        Reset model parameters using uniform initialization.
+        """
         stdv = 1. / math.sqrt(self.weight.size(1))
         self.weight.data.uniform_(-stdv, stdv)
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, data):
+        """
+        Forward pass of MVA model.
+        
+        Args:
+            data: Tuple containing molecular graph and sequence data.
+            
+        Returns:
+            torch.Tensor: Logits for DDI prediction.
+        """
         # node_tensor_1, adjacency_tensor_1, node_tensor_2, adjacency_tensor_2, num_size_tensor, target_tensor, d1_emb_tensor, d2_emb_tensor, mask_1_tensor, mask_2_tensor
         # 把数据都放到device上
         fts_1, adjs_1, fts_2, adjs_2, num_size, _, de_1, de_2, _, _ = data
@@ -187,10 +236,15 @@ class MVA(nn.Module):
         return result
     
     def loss(self, logits, labels):
-        """Supervised loss for DDI edge classification.
-
-        If args.matrix in ['multilabel','twosides'] -> BCEWithLogitsLoss (labels float multi-hot)
-        else -> CrossEntropyLoss (labels long class indices)
+        """
+        Compute supervised loss for DDI edge classification.
+        
+        Args:
+            logits: Model predictions.
+            labels: Ground truth labels.
+            
+        Returns:
+            torch.Tensor: Loss value.
         """
         task = getattr(self.args, 'matrix', 'multiclass')
         if task in ['multilabel', 'twosides']:
@@ -200,6 +254,13 @@ class MVA(nn.Module):
             return nn.CrossEntropyLoss()(logits, labels.long())
 
 class AFF(nn.Module):
+    """
+    Attention Feature Fusion module for multi-view feature integration.
+    
+    Args:
+        channels: Input channel dimension (default=128).
+        r: Reduction ratio for intermediate channels (default=4).
+    """
     def __init__(self, channels=128, r=4):
         super(AFF, self).__init__()
         inter_channels = int(channels // r)
@@ -224,6 +285,16 @@ class AFF(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x, y):
+        """
+        Forward pass for attention feature fusion.
+        
+        Args:
+            x: First feature tensor.
+            y: Second feature tensor.
+            
+        Returns:
+            torch.Tensor: Fused feature tensor.
+        """
         batch_size, feature_size = x.size()
 
         # Reshape x and y as 2D images
@@ -247,6 +318,13 @@ class AFF(nn.Module):
 # sub-transformer
 
 class LayerNorm(nn.Module):
+    """
+    Layer normalization module.
+    
+    Args:
+        hidden_size: Hidden dimension size.
+        variance_epsilon: Small epsilon for numerical stability (default=1e-12).
+    """
     def __init__(self, hidden_size, variance_epsilon=1e-12):
         super(LayerNorm, self).__init__()
         self.gamma = nn.Parameter(torch.ones(hidden_size))
@@ -254,6 +332,15 @@ class LayerNorm(nn.Module):
         self.variance_epsilon = variance_epsilon
 
     def forward(self, x):
+        """
+        Apply layer normalization.
+        
+        Args:
+            x: Input tensor.
+            
+        Returns:
+            torch.Tensor: Normalized tensor.
+        """
         u = x.mean(-1, keepdim=True)
         s = (x - u).pow(2).mean(-1, keepdim=True)
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
@@ -261,9 +348,15 @@ class LayerNorm(nn.Module):
 
 
 class Embeddings(nn.Module):
-    """Construct the embeddings from protein/target, position embeddings.
     """
-
+    Construct embeddings from sequence tokens and positional information.
+    
+    Args:
+        vocab_size: Vocabulary size.
+        hidden_size: Hidden dimension size.
+        max_position_size: Maximum sequence length.
+        dropout_rate: Dropout rate.
+    """
     def __init__(self, vocab_size, hidden_size, max_position_size, dropout_rate):
         super(Embeddings, self).__init__()
         self.word_embeddings = nn.Embedding(vocab_size, hidden_size)
@@ -273,9 +366,15 @@ class Embeddings(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, input_ids):
-        # b = torch.LongTensor(1, 2)
-        # b = b.cuda()
-        # input_ids = input_ids.type_as(b)
+        """
+        Create embeddings for input tokens.
+        
+        Args:
+            input_ids: Token indices.
+            
+        Returns:
+            torch.Tensor: Combined token and position embeddings.
+        """
         input_ids = input_ids.long()
         seq_length = input_ids.size(1)
         position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
@@ -292,6 +391,14 @@ class Embeddings(nn.Module):
 
 
 class SelfAttention(nn.Module):
+    """
+    Self-attention module.
+    
+    Args:
+        hidden_size: Hidden dimension size.
+        num_attention_heads: Number of attention heads.
+        attention_probs_dropout_prob: Dropout probability for attention.
+    """
     def __init__(self, hidden_size, num_attention_heads, attention_probs_dropout_prob):
         super(SelfAttention, self).__init__()
         if hidden_size % num_attention_heads != 0:
@@ -309,11 +416,30 @@ class SelfAttention(nn.Module):
         self.dropout = nn.Dropout(attention_probs_dropout_prob)
 
     def transpose_for_scores(self, x):
+        """
+        Reshape tensor for multi-head attention.
+        
+        Args:
+            x: Input tensor.
+            
+        Returns:
+            torch.Tensor: Reshaped tensor for attention computation.
+        """
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states, attention_mask):
+        """
+        Compute self-attention.
+        
+        Args:
+            hidden_states: Input hidden states.
+            attention_mask: Attention mask.
+            
+        Returns:
+            torch.Tensor: Attention output.
+        """
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
@@ -325,7 +451,6 @@ class SelfAttention(nn.Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         attention_scores = attention_scores + attention_mask
-
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -342,6 +467,13 @@ class SelfAttention(nn.Module):
 
 
 class SelfOutput(nn.Module):
+    """
+    Output module for self-attention with residual connection.
+    
+    Args:
+        hidden_size: Hidden dimension size.
+        hidden_dropout_prob: Dropout probability.
+    """
     def __init__(self, hidden_size, hidden_dropout_prob):
         super(SelfOutput, self).__init__()
         self.dense = nn.Linear(hidden_size, hidden_size)
@@ -349,6 +481,16 @@ class SelfOutput(nn.Module):
         self.dropout = nn.Dropout(hidden_dropout_prob)
 
     def forward(self, hidden_states, input_tensor):
+        """
+        Apply output transformation with residual connection.
+        
+        Args:
+            hidden_states: Attention output.
+            input_tensor: Original input.
+            
+        Returns:
+            torch.Tensor: Output with residual connection.
+        """
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
@@ -356,29 +498,72 @@ class SelfOutput(nn.Module):
 
 
 class Attention(nn.Module):
+    """
+    Complete attention module with self-attention and output projection.
+    
+    Args:
+        hidden_size: Hidden dimension size.
+        num_attention_heads: Number of attention heads.
+        attention_probs_dropout_prob: Dropout probability for attention.
+        hidden_dropout_prob: Dropout probability for hidden layers.
+    """
     def __init__(self, hidden_size, num_attention_heads, attention_probs_dropout_prob, hidden_dropout_prob):
         super(Attention, self).__init__()
         self.self = SelfAttention(hidden_size, num_attention_heads, attention_probs_dropout_prob)
         self.output = SelfOutput(hidden_size, hidden_dropout_prob)
 
     def forward(self, input_tensor, attention_mask):
+        """
+        Apply attention mechanism.
+        
+        Args:
+            input_tensor: Input tensor.
+            attention_mask: Attention mask.
+            
+        Returns:
+            torch.Tensor: Attention output.
+        """
         self_output = self.self(input_tensor, attention_mask)  # +注意力
         attention_output = self.output(self_output, input_tensor)  # +残差
         return attention_output
 
 
 class Intermediate(nn.Module):
+    """
+    Intermediate feed-forward module.
+    
+    Args:
+        hidden_size: Input hidden dimension.
+        intermediate_size: Intermediate dimension size.
+    """
     def __init__(self, hidden_size, intermediate_size):
         super(Intermediate, self).__init__()
         self.dense = nn.Linear(hidden_size, intermediate_size)
 
     def forward(self, hidden_states):
+        """
+        Apply intermediate transformation.
+        
+        Args:
+            hidden_states: Input hidden states.
+            
+        Returns:
+            torch.Tensor: Transformed tensor.
+        """
         hidden_states = self.dense(hidden_states)
         hidden_states = F.relu(hidden_states)
         return hidden_states
 
 
 class Output(nn.Module):
+    """
+    Output module with residual connection.
+    
+    Args:
+        intermediate_size: Intermediate dimension size.
+        hidden_size: Output hidden dimension.
+        hidden_dropout_prob: Dropout probability.
+    """
     def __init__(self, intermediate_size, hidden_size, hidden_dropout_prob):
         super(Output, self).__init__()
         self.dense = nn.Linear(intermediate_size, hidden_size)
@@ -386,6 +571,16 @@ class Output(nn.Module):
         self.dropout = nn.Dropout(hidden_dropout_prob)
 
     def forward(self, hidden_states, input_tensor):
+        """
+        Apply output transformation with residual connection.
+        
+        Args:
+            hidden_states: Intermediate tensor.
+            input_tensor: Original input.
+            
+        Returns:
+            torch.Tensor: Output with residual connection.
+        """
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
@@ -393,6 +588,16 @@ class Output(nn.Module):
 
 
 class Encoder(nn.Module):
+    """
+    Transformer encoder block with attention and feed-forward layers.
+    
+    Args:
+        hidden_size: Hidden dimension size.
+        intermediate_size: Intermediate dimension size.
+        num_attention_heads: Number of attention heads.
+        attention_probs_dropout_prob: Dropout probability for attention.
+        hidden_dropout_prob: Dropout probability for hidden layers.
+    """
     def __init__(self, hidden_size, intermediate_size, num_attention_heads, attention_probs_dropout_prob,
                  hidden_dropout_prob):
         super(Encoder, self).__init__()
@@ -401,6 +606,16 @@ class Encoder(nn.Module):
         self.output = Output(intermediate_size, hidden_size, hidden_dropout_prob)
 
     def forward(self, hidden_states, attention_mask):
+        """
+        Apply transformer encoder block.
+        
+        Args:
+            hidden_states: Input hidden states.
+            attention_mask: Attention mask.
+            
+        Returns:
+            torch.Tensor: Encoded tensor.
+        """
         attention_output = self.attention(hidden_states, attention_mask)  # 给向量加了残差和注意力机制
         intermediate_output = self.intermediate(attention_output)  # 给向量拉长
         layer_output = self.output(intermediate_output, attention_output)  # 把向量带着残差压缩回去
@@ -409,6 +624,17 @@ class Encoder(nn.Module):
 
 
 class Encoder_MultipleLayers(nn.Module):
+    """
+    Multi-layer transformer encoder.
+    
+    Args:
+        n_layer: Number of encoder layers.
+        hidden_size: Hidden dimension size.
+        intermediate_size: Intermediate dimension size.
+        num_attention_heads: Number of attention heads.
+        attention_probs_dropout_prob: Dropout probability for attention.
+        hidden_dropout_prob: Dropout probability for hidden layers.
+    """
     def __init__(self, n_layer, hidden_size, intermediate_size, num_attention_heads, attention_probs_dropout_prob,
                  hidden_dropout_prob):
         super(Encoder_MultipleLayers, self).__init__()
@@ -417,9 +643,18 @@ class Encoder_MultipleLayers(nn.Module):
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(n_layer)])
 
     def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True):
-
+        """
+        Apply multiple transformer encoder layers.
+        
+        Args:
+            hidden_states: Input hidden states.
+            attention_mask: Attention mask.
+            output_all_encoded_layers: Whether to output all layers (default=True).
+            
+        Returns:
+            torch.Tensor: Encoded tensor.
+        """
         for layer_module in self.layer:
             hidden_states = layer_module(hidden_states, attention_mask)
 
         return hidden_states
-
